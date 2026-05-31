@@ -18,19 +18,8 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
-  signingConfigs {
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore.base64")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
-    }
-  }
 
   buildTypes {
-    debug {
-      signingConfig = signingConfigs.getByName("debugConfig")
-    }
     release {
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
