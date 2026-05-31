@@ -1,4 +1,5 @@
-name: Build APK
+- name: Build APK
+        run: sh gradlew assembleDebug --stacktrace
 on: [push]
 jobs:
   build:
