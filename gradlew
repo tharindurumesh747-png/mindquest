@@ -1,10 +1,10 @@
-#!/bin/sh
-#
-# Gradle start up script for UN*X
-#
-APP_NAME="Gradle"
-APP_BASE_NAME=`basename "$0"`
-DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
-CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
-
-exec "$JAVACMD" "$@" -classpath "$CLASSPATH" org.gradle.wrapper.GradleWrapperMain "$@"
+#!/usr/bin/env sh
+set -e
+GRADLE_VERSION=8.4
+GRADLE_HOME=$HOME/.gradle/wrapper/dists/gradle-$GRADLE_VERSION-bin
+mkdir -p $GRADLE_HOME
+if [ ! -f "$GRADLE_HOME/gradle-$GRADLE_VERSION/bin/gradle" ]; then
+  curl -L https://services.gradle.org/distributions/gradle-$GRADLE_VERSION-bin.zip -o $GRADLE_HOME/gradle.zip
+  unzip -q $GRADLE_HOME/gradle.zip -d $GRADLE_HOME
+fi
+$GRADLE_HOME/gradle-$GRADLE_VERSION/bin/gradle "$@"
