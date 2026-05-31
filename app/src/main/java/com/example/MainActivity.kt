@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.screens.*
 import com.example.ui.theme.FantasyThemes
-import com.example.ui.viewmodel.GameViewModel
 
 sealed class Screen {
     object Splash : Screen()
