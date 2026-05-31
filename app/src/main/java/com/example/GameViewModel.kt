@@ -104,6 +104,7 @@ class GameViewModel : ViewModel() {
         _selectionFeedback.value = null
         _isCorrectFeedback.value = null
         
+        SoundManager.playWhoosh()
         loadQuestions()
     }
 
@@ -116,125 +117,25 @@ class GameViewModel : ViewModel() {
             val grade = _selectedGrade.value
             val subject = _selectedSubject.value
             
-            // Build offline fallback beforehand
-            val offlineFallback = QuestionPool.getOfflineQuestions(grade, subject, lang)
+            delay(800) // Aesthetic delay for retro loader feel
             
-            val apiKey = BuildConfig.GEMINI_API_KEY
-            if (apiKey.isEmpty() || apiKey == "GEMINI_API_KEY_DEFAULT_VALUE") {
-                // Instantly swap to offline questions as graceful check
-                delay(1000) // Aesthetic delay for retro loader feel
-                _questions.value = offlineFallback
-                _isLoading.value = false
-                startTimerLimit()
-                return@launch
-            }
-
-            try {
-                val responseJson = fetchQuestionsFromGemini(apiKey, grade, subject, lang)
-                val parsedList = parseGeminiResponse(responseJson)
-                if (parsedList.isNotEmpty()) {
-                    _questions.value = parsedList
-                } else {
-                    _questions.value = offlineFallback
+            val offlineQuestions = QuestionPool.getOfflineQuestions(grade, subject, lang).toMutableList()
+            offlineQuestions.shuffle() // Never show same order
+            
+            // Weave in exactly 5 unique random bonus questions to satisfy "appear at any time during gameplay" and "200+ bonus questions"
+            val bonusPool = QuestionPool.getBonusQuestions(lang).shuffled()
+            val injectCount = 5
+            for (i in 0 until injectCount) {
+                if (i < bonusPool.size) {
+                    val insertPos = (0..offlineQuestions.size).random()
+                    offlineQuestions.add(insertPos, bonusPool[i])
                 }
-            } catch (e: Exception) {
-                // Fallback to offline gracefully
-                _questions.value = offlineFallback
-            } finally {
-                _isLoading.value = false
-                startTimerLimit()
             }
-        }
-    }
-
-    private suspend fun fetchQuestionsFromGemini(apiKey: String, grade: Int, subject: String, lang: String): String {
-        val systemPrompt = "You are MindQuest, an interactive fantasy-RPG quiz game master. You write educational adventure questions."
-        val fullPrompt = """
-            Generate 5 multiple choice questions suitable for Grade $grade students on the subject of '$subject' in ${if (lang == "si") "Sinhala language" else "English language"}.
-            Infuse minor fantasy RPG flavor (e.g. mentions of magical chambers, dragon eggs, knights, enchanted scrolls, castles).
             
-            Return ONLY a raw valid JSON array, do not include any markdown format (no ```json).
-            Each question object must contain precisely the following:
-            - "question": string
-            - "options": list of 4 strings
-            - "answerIndex": integer (0 to 3)
-            - "hint": string (helpful RPG wizard clue)
-        """.trimIndent()
-
-        val escapedPrompt = escapeJson(fullPrompt)
-        val requestJson = """
-            {
-              "contents": [
-                {
-                  "parts": [
-                    {
-                      "text": "$escapedPrompt"
-                    }
-                  ]
-                }
-              ],
-              "generationConfig": {
-                "responseMimeType": "application/json"
-              }
-            }
-        """.trimIndent()
-
-        val mediaType = "application/json; charset=utf-8".toMediaType()
-        val requestBody = requestJson.toRequestBody(mediaType)
-        val request = Request.Builder()
-            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey")
-            .post(requestBody)
-            .build()
-
-        okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw Exception("HTTP Error: ${response.code}")
-            }
-            val body = response.body?.string() ?: throw Exception("Empty response body")
-            return body
+            _questions.value = offlineQuestions
+            _isLoading.value = false
+            startTimerLimit()
         }
-    }
-
-    private fun parseGeminiResponse(rawBody: String): List<Question> {
-        // Parse the top-level generateContent response JSON
-        val topObj = JSONObject(rawBody)
-        val candidates = topObj.getJSONArray("candidates")
-        val content = candidates.getJSONObject(0).getJSONObject("content")
-        val parts = content.getJSONArray("parts")
-        val rawText = parts.getJSONObject(0).getString("text")
-
-        // Extraction to handle raw text JSON block
-        val startIndex = rawText.indexOf('[')
-        val endIndex = rawText.lastIndexOf(']')
-        if (startIndex == -1 || endIndex == -1 || endIndex < startIndex) {
-            throw Exception("No JSON array returned in textual payload")
-        }
-        val jsonArrayStr = rawText.substring(startIndex, endIndex + 1)
-        val array = JSONArray(jsonArrayStr)
-        val results = mutableListOf<Question>()
-
-        for (i in 0 until array.length()) {
-            val obj = array.getJSONObject(i)
-            val questionText = obj.getString("question")
-            val optionsArray = obj.getJSONArray("options")
-            val optionsList = mutableListOf<String>()
-            for (j in 0 until optionsArray.length()) {
-                optionsList.add(optionsArray.getString(j))
-            }
-            val correctIdx = obj.getInt("answerIndex")
-            val quizHint = obj.optString("hint", "The wizard points towards the stars.")
-            
-            results.add(Question(questionText, optionsList, correctIdx, quizHint))
-        }
-        return results
-    }
-
-    private fun escapeJson(str: String): String {
-        return str.replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
     }
 
     // Timer loop control
@@ -268,6 +169,8 @@ class GameViewModel : ViewModel() {
             _isCorrectFeedback.value = false
             _selectionFeedback.value = -1 // No selection feedback index
             
+            SoundManager.playWrong()
+            
             delay(1500)
             _selectionFeedback.value = null
             _isCorrectFeedback.value = null
@@ -289,6 +192,13 @@ class GameViewModel : ViewModel() {
         stopTimer()
         _selectionFeedback.value = selectedIndex
         _isCorrectFeedback.value = isCorrect
+
+        // Play synthesized sound effect
+        if (isCorrect) {
+            SoundManager.playCorrect()
+        } else {
+            SoundManager.playWrong()
+        }
 
         viewModelScope.launch {
             if (isCorrect) {
@@ -319,9 +229,19 @@ class GameViewModel : ViewModel() {
         
         if (nextIdx < currentList.size) {
             _currentQuestionIndex.value = nextIdx
+            SoundManager.playWhoosh()
             startTimerLimit()
         } else {
             stateManager.completeQuiz()
+            
+            // Check performance on result screen
+            val passed = _score.value >= (currentList.size * 0.5f).toInt()
+            if (passed) {
+                SoundManager.playVictoryFanfare()
+            } else {
+                SoundManager.playWrong()
+            }
+            
             if (_selectedGrade.value < 10 && _score.value >= 3) {
                 stateManager.unlockGrade(_selectedGrade.value + 1)
             }

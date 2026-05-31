@@ -75,6 +75,9 @@ class MainActivity : ComponentActivity() {
                                 stateManager = gameViewModel.stateManager,
                                 onStartAdventure = {
                                     navigateTo(Screen.GradeSelect)
+                                },
+                                onExit = {
+                                    finishAffinity()
                                 }
                             )
                         }

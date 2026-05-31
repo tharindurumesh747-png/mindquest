@@ -12,11 +12,13 @@ import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.VolumeMute
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.SoundManager
 import com.example.StateManager
 import com.example.ui.components.AnimatedStarField
 import com.example.ui.components.GlassCard
@@ -40,7 +43,8 @@ import com.example.ui.theme.FantasyTheme
 fun HomeScreen(
     theme: FantasyTheme,
     stateManager: StateManager,
-    onStartAdventure: () -> Unit
+    onStartAdventure: () -> Unit,
+    onExit: () -> Unit
 ) {
     val currentThemeName by stateManager.theme.collectAsState()
     val currentLang by stateManager.language.collectAsState()
@@ -50,9 +54,16 @@ fun HomeScreen(
     val unlockedGrades by stateManager.unlockedGrades.collectAsState()
 
     val isSinhala = currentLang == "si"
+    var isMuted by remember { mutableStateOf(SoundManager.isMuted()) }
+
+    // Start background music automatically when home screen loads
+    LaunchedEffect(Unit) {
+        SoundManager.startBackgroundMusic()
+    }
 
     // Localized Strings Map
-    val titleText = if (isSinhala) "ක්‍වෙස්ට් ලොබිය" else "QUEST LOBBY"
+    // QUEST LOBBY should stay in English for both languages as per user constraint.
+    val titleText = "QUEST LOBBY"
     val subtitleText = if (isSinhala) "ඔබේ ඉගෙනීමේ පියස" else "Hero's Sanctuary"
     val heroStatsLabel = if (isSinhala) "වීරයාගේ තත්ත්වය" else "HERO STATUS"
     val levelLabel = if (isSinhala) "මට්ටම" else "LEVEL"
@@ -61,6 +72,7 @@ fun HomeScreen(
     val unlockedGradesLabel = if (isSinhala) "මුදාහල ශ්‍රේණි" else "UNLOCKED REALMS"
     val realmToggleLabel = if (isSinhala) "විෂය දිශාව තෝරන්න" else "Select Learning Realm"
     val startBtnText = if (isSinhala) "ත්‍රාසජනක ගමන අරඹන්න" else "START ADVENTURE"
+    val exitBtnText = if (isSinhala) "යෙදුමෙන් පිටවීම" else "EXIT GAME"
 
     Box(
         modifier = Modifier
@@ -80,13 +92,13 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header bar containing toggles for language
+            // Header bar containing Title, Language Selector, and Mute Control Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = titleText,
                         color = theme.primary,
@@ -99,14 +111,41 @@ fun HomeScreen(
                         text = subtitleText,
                         color = theme.accent,
                         fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
                         fontFamily = FontFamily.SansSerif
                     )
                 }
 
-                LanguageSelector(
-                    currentLang = currentLang,
-                    onLangSelected = { stateManager.switchLanguage(it) }
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Mute icon toggle button
+                    IconButton(
+                        onClick = {
+                            SoundManager.toggleMute()
+                            isMuted = SoundManager.isMuted()
+                            if (!isMuted) {
+                                SoundManager.startBackgroundMusic()
+                            }
+                        },
+                        modifier = Modifier
+                            .size(44.dp)
+                            .testTag("mute_toggle_btn")
+                    ) {
+                        Icon(
+                            imageVector = if (isMuted) Icons.Default.VolumeMute else Icons.Default.VolumeUp,
+                            contentDescription = if (isMuted) "Unmute" else "Mute",
+                            tint = theme.accent,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    LanguageSelector(
+                        currentLang = currentLang,
+                        onLangSelected = { stateManager.switchLanguage(it) }
+                    )
+                }
             }
 
             // Hero Avatar and Level Banner
@@ -264,12 +303,35 @@ fun HomeScreen(
             NeonButton(
                 text = startBtnText,
                 theme = theme,
-                onClick = onStartAdventure,
+                onClick = {
+                    SoundManager.playClick()
+                    onStartAdventure()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(64.dp)
                     .testTag("start_adventure_btn")
             )
+
+            // Sleek EXIT button to quit the app instantly
+            TextButton(
+                onClick = {
+                    SoundManager.playClick()
+                    onExit()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("exit_game_btn")
+            ) {
+                Text(
+                    text = exitBtnText.uppercase(),
+                    color = theme.accent.copy(alpha = 0.7f),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    letterSpacing = 1.sp
+                )
+            }
         }
     }
 }
