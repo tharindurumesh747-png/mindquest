@@ -92,7 +92,7 @@ Return ONLY a JSON array, no other text:
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = requestJson.toRequestBody(mediaType)
         val request = Request.Builder()
-            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey")
+            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey")
             .post(requestBody)
             .build()
 
