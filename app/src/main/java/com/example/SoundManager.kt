@@ -30,15 +30,6 @@ object SoundManager {
             return
         }
         isStopped = false
-        
-        try {
-            // Set stream volume to maximum
-            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
 
         // Initialize SharedPreferences-based SoundSettings
         SoundSettings.init(context)
@@ -57,7 +48,7 @@ object SoundManager {
                 track = AudioTrack.Builder()
                     .setAudioAttributes(
                         AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_GAME)
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
                             .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                             .build()
                     )
@@ -71,18 +62,21 @@ object SoundManager {
                     .setBufferSizeInBytes(bufferSize)
                     .setTransferMode(AudioTrack.MODE_STATIC)
                     .build()
-                track.write(pcm, 0, pcm.size)
-                track.setStereoVolume(1.0f, 1.0f) // Set max track volume
-                track.play()
-                val durationMs = (pcm.size * 1000L) / SAMPLE_RATE
-                delay(durationMs + 100)
-                track.stop()
-            } catch (e: Exception) {
+                
+                if (track.state == AudioTrack.STATE_INITIALIZED) {
+                    track.write(pcm, 0, pcm.size)
+                    track.setVolume(1.0f) // Set max track volume
+                    track.play()
+                    val durationMs = (pcm.size * 1000L) / SAMPLE_RATE
+                    delay(durationMs + 100)
+                    track.stop()
+                }
+            } catch (e: Throwable) {
                 e.printStackTrace()
             } finally {
                 try {
                     track?.release()
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     // Ignore
                 }
             }
@@ -358,10 +352,31 @@ object SoundManager {
 
     fun pauseMusic() {
         isMusicPaused = true
+        stopBackgroundMusic()
     }
 
     fun resumeMusic() {
         isMusicPaused = false
+        if (!isStopped) {
+            startBackgroundMusic()
+        }
+    }
+
+    private fun stopBackgroundMusic() {
+        bgJob?.cancel()
+        bgJob = null
+        try {
+            val trackSnapshot = bgMusicTrack
+            if (trackSnapshot != null) {
+                if (trackSnapshot.state == AudioTrack.STATE_INITIALIZED) {
+                    trackSnapshot.stop()
+                }
+                trackSnapshot.release()
+            }
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
+        bgMusicTrack = null
     }
 
     private fun startBackgroundMusic() {
@@ -391,7 +406,7 @@ object SoundManager {
                 bgMusicTrack = AudioTrack.Builder()
                     .setAudioAttributes(
                         AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_GAME)
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
                             .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                             .build()
                     )
@@ -405,8 +420,15 @@ object SoundManager {
                     .setBufferSizeInBytes(bufferSize)
                     .setTransferMode(AudioTrack.MODE_STREAM)
                     .build()
-                bgMusicTrack?.play()
-            } catch (e: Exception) {
+                
+                if (bgMusicTrack?.state == AudioTrack.STATE_INITIALIZED) {
+                    bgMusicTrack?.play()
+                } else {
+                    bgMusicTrack?.release()
+                    bgMusicTrack = null
+                    return@launch
+                }
+            } catch (e: Throwable) {
                 e.printStackTrace()
                 return@launch
             }
@@ -426,10 +448,10 @@ object SoundManager {
                     // Write silence and sleep safely
                     try {
                         val trackSnapshot = bgMusicTrack
-                        if (trackSnapshot != null && !isStopped) {
+                        if (trackSnapshot != null && trackSnapshot.state == AudioTrack.STATE_INITIALIZED && !isStopped) {
                             trackSnapshot.write(stepPcm, 0, numSamples)
                         }
-                    } catch (e: Exception) {
+                    } catch (e: Throwable) {
                         e.printStackTrace()
                     }
                     delay(stepDurMs.toLong())
@@ -482,10 +504,10 @@ object SoundManager {
                 // Write block to streaming Track safely
                 try {
                     val trackSnapshot = bgMusicTrack
-                    if (trackSnapshot != null && !isStopped) {
+                    if (trackSnapshot != null && trackSnapshot.state == AudioTrack.STATE_INITIALIZED && !isStopped) {
                         trackSnapshot.write(stepPcm, 0, numSamples)
                     }
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     e.printStackTrace()
                 }
 
@@ -503,24 +525,16 @@ object SoundManager {
 
     fun stopAllSounds() {
         try {
-            bgMusicTrack?.pause()
-            bgMusicTrack?.flush()
-        } catch (e: Exception) {
+            stopBackgroundMusic()
+        } catch (e: Throwable) {
             e.printStackTrace()
         }
     }
 
     fun release() {
         isStopped = true
-        bgJob?.cancel()
-        bgJob = null
-        try {
-            bgMusicTrack?.stop()
-            bgMusicTrack?.release()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        bgMusicTrack = null
+        isInitialized = false
+        stopBackgroundMusic()
         soundScope.cancel()
         soundScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     }
