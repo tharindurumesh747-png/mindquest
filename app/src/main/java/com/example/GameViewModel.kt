@@ -1,290 +1,402 @@
 package com.example
 
-import android.app.Application
-import android.util.Log
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.Question
-import com.example.data.PlaySessionManager
 import com.example.data.QuestionBank
+import com.example.data.SoundSettings
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.Random
 
-class GameViewModel(application: Application) : AndroidViewModel(application) {
-    val stateManager = StateManager()
+class GameViewModel : ViewModel() {
 
-    // Level progression selection state
-    private val _selectedGrade = MutableStateFlow(1)
-    val selectedGrade: StateFlow<Int> = _selectedGrade.asStateFlow()
+    // Language / Stage selectors
+    private val _language = MutableStateFlow("English")
+    val language: StateFlow<String> = _language.asStateFlow()
 
-    private val _selectedSubject = MutableStateFlow("Math")
-    val selectedSubject: StateFlow<String> = _selectedSubject.asStateFlow()
+    private val _currentGrade = MutableStateFlow(3)
+    val currentGrade: StateFlow<Int> = _currentGrade.asStateFlow()
 
-    private val _selectedLevel = MutableStateFlow(1) // mapped to Stage: 1, 2, or 3
-    val selectedLevel: StateFlow<Int> = _selectedLevel.asStateFlow()
+    private val _currentSubject = MutableStateFlow("Science")
+    val currentSubject: StateFlow<String> = _currentSubject.asStateFlow()
 
-    // Current quiz questions pool
+    private val _currentStage = MutableStateFlow(1)
+    val currentStage: StateFlow<Int> = _currentStage.asStateFlow()
+
+    // Question lists and indexing
     private val _questions = MutableStateFlow<List<Question>>(emptyList())
     val questions: StateFlow<List<Question>> = _questions.asStateFlow()
 
-    private val _currentQuestionIndex = MutableStateFlow(0)
-    val currentQuestionIndex: StateFlow<Int> = _currentQuestionIndex.asStateFlow()
+    private val _currentIndex = MutableStateFlow(0)
+    val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
 
+    // Stats
     private val _score = MutableStateFlow(0)
     val score: StateFlow<Int> = _score.asStateFlow()
-
-    private val _earnedXp = MutableStateFlow(0)
-    val earnedXp: StateFlow<Int> = _earnedXp.asStateFlow()
 
     private val _lives = MutableStateFlow(3)
     val lives: StateFlow<Int> = _lives.asStateFlow()
 
-    // Screen state flags
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    private val _currentStreak = MutableStateFlow(0)
+    val currentStreak: StateFlow<Int> = _currentStreak.asStateFlow()
 
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
+    private val _bestStreak = MutableStateFlow(0)
+    val bestStreak: StateFlow<Int> = _bestStreak.asStateFlow()
 
-    private val _isOfflineMode = MutableStateFlow(true)
-    val isOfflineMode: StateFlow<Boolean> = _isOfflineMode.asStateFlow()
+    private val _totalTimeSpentSec = MutableStateFlow(0)
+    val totalTimeSpentSec: StateFlow<Int> = _totalTimeSpentSec.asStateFlow()
 
-    // Lifeline: 50/50 state
-    private val _isFiftyFiftyUsed = MutableStateFlow(false)
-    val isFiftyFiftyUsed: StateFlow<Boolean> = _isFiftyFiftyUsed.asStateFlow()
+    private val _ticksRemaining = MutableStateFlow(30)
+    val ticksRemaining: StateFlow<Int> = _ticksRemaining.asStateFlow()
 
+    private val _correctAnswersCount = MutableStateFlow(0)
+    val correctAnswersCount: StateFlow<Int> = _correctAnswersCount.asStateFlow()
+
+    // Helpers / RPG Spells
     private val _hintsCount = MutableStateFlow(3)
     val hintsCount: StateFlow<Int> = _hintsCount.asStateFlow()
+
+    private val _isFiftyFiftyUsed = MutableStateFlow(false)
+    val isFiftyFiftyUsed: StateFlow<Boolean> = _isFiftyFiftyUsed.asStateFlow()
 
     private val _disabledOptions = MutableStateFlow<Set<Int>>(emptySet())
     val disabledOptions: StateFlow<Set<Int>> = _disabledOptions.asStateFlow()
 
-    // Option selection visual feedback state
-    private val _selectionFeedback = MutableStateFlow<Int?>(null)
-    val selectionFeedback: StateFlow<Int?> = _selectionFeedback.asStateFlow()
+    // Real-time animation visual flow triggers
+    private val _floatingScoreAnimation = MutableStateFlow<String?>(null)
+    val floatingScoreAnimation: StateFlow<String?> = _floatingScoreAnimation.asStateFlow()
+
+    private val _comboTextAnimation = MutableStateFlow<String?>(null)
+    val comboTextAnimation: StateFlow<String?> = _comboTextAnimation.asStateFlow()
+
+    private val _encouragingMessage = MutableStateFlow<String?>(null)
+    val encouragingMessage: StateFlow<String?> = _encouragingMessage.asStateFlow()
+
+    private val _selectedAnswerIndex = MutableStateFlow<Int?>(null)
+    val selectedAnswerIndex: StateFlow<Int?> = _selectedAnswerIndex.asStateFlow()
 
     private val _isCorrectFeedback = MutableStateFlow<Boolean?>(null)
     val isCorrectFeedback: StateFlow<Boolean?> = _isCorrectFeedback.asStateFlow()
 
-    // Timer logic
-    private val _timerSeconds = MutableStateFlow(30)
-    val timerSeconds: StateFlow<Int> = _timerSeconds.asStateFlow()
-
-    private val _isTimeRunning = MutableStateFlow(false)
-    val isTimeRunning: StateFlow<Boolean> = _isTimeRunning.asStateFlow()
+    private val _quizFinished = MutableStateFlow(false)
+    val quizFinished: StateFlow<Boolean> = _quizFinished.asStateFlow()
 
     private var timerJob: Job? = null
 
-    fun selectGrade(grade: Int) {
-        _selectedGrade.value = grade
+    init {
+        // Initially set a basic set of questions
+        loadQuestions()
     }
 
-    fun selectSubject(subject: String) {
-        _selectedSubject.value = subject
+    fun setLanguage(lang: String) {
+        _language.value = lang
     }
 
-    fun selectLevel(level: Int) {
-        _selectedLevel.value = level
+    fun selectGrade(g: Int) {
+        _currentGrade.value = g
+        _currentStage.value = 1
+        loadQuestions()
     }
 
-    fun startQuiz() {
-        stopTimer()
-        _currentQuestionIndex.value = 0
+    fun selectSubject(subj: String) {
+        _currentSubject.value = subj
+        _currentStage.value = 1
+        loadQuestions()
+    }
+
+    fun setStage(stg: Int) {
+        _currentStage.value = stg
+        loadQuestions()
+    }
+
+    fun loadQuestions() {
+        val qList = QuestionBank.getQuestionsFor(
+            _currentGrade.value,
+            _currentSubject.value,
+            _currentStage.value
+        )
+        _questions.value = qList
+        resetQuizState()
+    }
+
+    fun resetQuizState() {
+        _currentIndex.value = 0
         _score.value = 0
-        _earnedXp.value = 0
         _lives.value = 3
-        _isFiftyFiftyUsed.value = false
+        _currentStreak.value = 0
+        _bestStreak.value = 0
+        _totalTimeSpentSec.value = 0
+        _correctAnswersCount.value = 0
         _hintsCount.value = 3
+        _isFiftyFiftyUsed.value = false
         _disabledOptions.value = emptySet()
-        _selectionFeedback.value = null
+        _floatingScoreAnimation.value = null
+        _comboTextAnimation.value = null
+        _encouragingMessage.value = null
+        _selectedAnswerIndex.value = null
         _isCorrectFeedback.value = null
-        
-        SoundManager.playWhoosh()
-        loadQuestions(forceRefresh = false)
+        _quizFinished.value = false
+        cancelTimer()
+        startTimer()
     }
 
-    fun loadQuestions(forceRefresh: Boolean = false) {
-        viewModelScope.launch {
-            _isLoading.value = true
-            _error.value = null
-            
-            val context = getApplication<Application>()
-            val grade = _selectedGrade.value
-            val subject = _selectedSubject.value
-            val stage = _selectedLevel.value
+    // ═══════════════════════════════════════
+    // TIMER PRESSURE MANAGEMENT
+    // ═══════════════════════════════════════
 
-            // Perform daily check on persistent question history
-            PlaySessionManager.checkDailyReset(context)
-
-            try {
-                // Fetch the 10 offline questions for current selection
-                val offlineQuestions = QuestionBank.getQuestions(grade, subject, stage)
-
-                if (offlineQuestions.isEmpty()) {
-                    _error.value = "No questions loaded. Tap retry to try again."
-                    _isLoading.value = false
-                    return@launch
-                }
-
-                // Shuffling: Every game, fully shuffle question sequences and option arrays
-                // Ensuring dual English and Sinhala options index match the same permutation!
-                val shuffledFinal = offlineQuestions.shuffled().map { q ->
-                    val permutation = (0..3).shuffled()
-                    val originalCorrectEn = q.options[q.correctAnswer]
-                    
-                    val shuffledOptionsEn = permutation.map { q.options[it] }
-                    val shuffledOptionsSi = permutation.map { q.optionsSinhala[it] }
-                    val newCorrectIndex = shuffledOptionsEn.indexOf(originalCorrectEn)
-                    
-                    q.copy(
-                        options = shuffledOptionsEn,
-                        optionsSinhala = shuffledOptionsSi,
-                        correctAnswer = newCorrectIndex
-                    )
-                }
-
-                _questions.value = shuffledFinal
-                _isOfflineMode.value = true
-                _isLoading.value = false
-                
-                // Track first question as shown as soon as we start
-                if (shuffledFinal.isNotEmpty()) {
-                    PlaySessionManager.markAsShown(context, shuffledFinal[0])
-                }
-                
-                startTimerLimit()
-            } catch (e: Exception) {
-                Log.e("GameViewModel", "Critical failure during question system loading: ${e.message}", e)
-                _error.value = "Failed to load offline questions: ${e.message} \nTap retry to try again."
-                _isLoading.value = false
-            }
-        }
-    }
-
-    // Timer loop control
-    private fun startTimerLimit() {
-        stopTimer()
-        _timerSeconds.value = 30
-        _isTimeRunning.value = true
-        
+    fun startTimer() {
+        cancelTimer()
+        _ticksRemaining.value = 30
         timerJob = viewModelScope.launch {
-            while (_timerSeconds.value > 0 && _isTimeRunning.value) {
+            while (_ticksRemaining.value > 0 && !_quizFinished.value) {
                 delay(1000)
-                if (_isTimeRunning.value) {
-                    _timerSeconds.value -= 1
+                if (_ticksRemaining.value > 0) {
+                    _ticksRemaining.value -= 1
+                    _totalTimeSpentSec.value += 1
+                    
+                    // Play dynamic ticking sound with increasing pitch
+                    if (_ticksRemaining.value in 1..3) {
+                        SoundManager.playTimerTick(3) // Level 3 urgent beep
+                    } else if (_ticksRemaining.value in 4..7) {
+                        SoundManager.playTimerTick(2) // Level 2 fast tick
+                    } else if (_ticksRemaining.value in 8..15) {
+                        SoundManager.playTimerTick(1) // Level 1 normal tick
+                    }
                 }
             }
-            if (_timerSeconds.value == 0 && _isTimeRunning.value) {
-                // Time's up is counted as an incorrect answer (loss of 1 life)
-                onTimerExpired()
+            if (_ticksRemaining.value == 0) {
+                onTimeOut()
             }
         }
     }
 
-    fun stopTimer() {
-        _isTimeRunning.value = false
+    fun cancelTimer() {
         timerJob?.cancel()
+        timerJob = null
     }
 
-    private fun onTimerExpired() {
-        _lives.value = (_lives.value - 1).coerceAtLeast(0)
+    private fun onTimeOut() {
+        _selectedAnswerIndex.value = -1 // indicates timeout
         _isCorrectFeedback.value = false
-        _selectionFeedback.value = -1 // No selection feedback index
         SoundManager.playWrong()
+
+        val isSin = _language.value == "Sinhala"
+        _encouragingMessage.value = getRandomEncouragement(false, isSin)
+        _floatingScoreAnimation.value = "-5"
+        adjustScore(-5)
+
+        _currentStreak.value = 0
+        _lives.value = (_lives.value - 1).coerceAtLeast(0)
+
+        viewModelScope.launch {
+            delay(1500)
+            _floatingScoreAnimation.value = null
+            _encouragingMessage.value = null
+            advanceQuestion()
+        }
     }
 
-    // Submitting selection for current question
-    fun submitAnswer(selectedIndex: Int, onQuizFinished: () -> Unit) {
-        val currentList = _questions.value
-        val currentIndex = _currentQuestionIndex.value
-        if (currentList.isEmpty() || currentIndex >= currentList.size || _lives.value <= 0) return
+    // ═══════════════════════════════════════
+    // ANSWER SUBMISSION (BUG 6)
+    // ═══════════════════════════════════════
 
-        val correctIndex = currentList[currentIndex].correctAnswerIndex
-        val isCorrect = selectedIndex == correctIndex
+    fun submitAnswer(optionIndex: Int) {
+        if (_selectedAnswerIndex.value != null || _quizFinished.value) return
+        cancelTimer()
 
-        stopTimer()
-        _selectionFeedback.value = selectedIndex
+        val currentQ = _questions.value.getOrNull(_currentIndex.value) ?: return
+        val isCorrect = optionIndex == currentQ.correctAnswerIndex
+        val isSin = _language.value == "Sinhala"
+
+        _selectedAnswerIndex.value = optionIndex
         _isCorrectFeedback.value = isCorrect
 
-        // Play synthesized sound effect & award XP on correct choice
         if (isCorrect) {
+            _correctAnswersCount.value += 1
+            _currentStreak.value += 1
+            if (_currentStreak.value > _bestStreak.value) {
+                _bestStreak.value = _currentStreak.value
+            }
+
+            // Play correct fanfare sound
             SoundManager.playCorrect()
-            _score.value += 1
-            _earnedXp.value += 20 // 20 XP per correct question
-            stateManager.addXp(20)
+
+            // Calculate Base points
+            var earnedPoints = 10
+            var animationVal = "+10"
+
+            // Timer Speed bonus points
+            val secondsElapsed = 30 - _ticksRemaining.value
+            if (secondsElapsed < 5) {
+                earnedPoints += 5
+                animationVal += "\n+5 Fast Bonus!"
+            } else if (secondsElapsed < 10) {
+                earnedPoints += 3
+                animationVal += "\n+3 Fast Bonus!"
+            } else if (secondsElapsed < 15) {
+                earnedPoints += 1
+                animationVal += "\n+1 Fast Bonus!"
+            }
+
+            // Combo System checks
+            val streakVal = _currentStreak.value
+            if (streakVal == 3) {
+                earnedPoints += 10
+                _comboTextAnimation.value = if (isSin) "3x සංයෝජනය! 🔥" else "3x Combo! 🔥"
+                animationVal += "\n+10 Combo!"
+                SoundManager.playComboSound(3)
+            } else if (streakVal == 5) {
+                earnedPoints += 20
+                _comboTextAnimation.value = if (isSin) "5x සංයෝජනය! ⚡" else "5x Combo! ⚡"
+                animationVal += "\n+20 Combo!"
+                SoundManager.playComboSound(5)
+            } else if (streakVal == 10) {
+                earnedPoints += 50
+                _comboTextAnimation.value = if (isSin) "විශිෂ්ටයි! 👑" else "LEGENDARY! 👑"
+                animationVal += "\n+50 Combo!"
+                SoundManager.playComboSound(10)
+            }
+
+            adjustScore(earnedPoints)
+            _floatingScoreAnimation.value = animationVal
+            _encouragingMessage.value = getRandomEncouragement(true, isSin)
+
         } else {
+            // Wrong answer
+            _currentStreak.value = 0
             SoundManager.playWrong()
+
+            adjustScore(-5)
+            _floatingScoreAnimation.value = "-5"
+            _encouragingMessage.value = getRandomEncouragement(false, isSin)
             _lives.value = (_lives.value - 1).coerceAtLeast(0)
+        }
+
+        viewModelScope.launch {
+            delay(2500)
+            _floatingScoreAnimation.value = null
+            _comboTextAnimation.value = null
+            _encouragingMessage.value = null
+            advanceQuestion()
         }
     }
 
-    fun goToNextQuestion(onQuizFinished: () -> Unit) {
-        _selectionFeedback.value = null
+    private fun adjustScore(pts: Int) {
+        val newScore = _score.value + pts
+        _score.value = newScore.coerceAtLeast(0)
+    }
+
+    private fun advanceQuestion() {
+        _selectedAnswerIndex.value = null
         _isCorrectFeedback.value = null
         _disabledOptions.value = emptySet()
 
-        if (_lives.value <= 0) {
-            onQuizFinished()
+        val nextIndex = _currentIndex.value + 1
+        val listSize = _questions.value.size
+        
+        if (nextIndex < listSize && _lives.value > 0) {
+            _currentIndex.value = nextIndex
+            startTimer()
         } else {
-            val currentList = _questions.value
-            val nextIdx = _currentQuestionIndex.value + 1
-            
-            if (nextIdx < currentList.size) {
-                _currentQuestionIndex.value = nextIdx
-                PlaySessionManager.markAsShown(getApplication(), currentList[nextIdx])
-                SoundManager.playWhoosh()
-                startTimerLimit()
-            } else {
-                stateManager.completeQuiz()
-                
-                // Save progress for stage completion! (Save stars using SharedPreferences)
-                val context = getApplication<Application>()
-                PlaySessionManager.markStageCompleted(context, _selectedGrade.value, _selectedSubject.value, _selectedLevel.value, _score.value)
-                
-                // Check performance on result screen
-                val passed = _score.value >= (currentList.size * 0.5f).toInt()
-                if (passed) {
-                    SoundManager.playVictoryFanfare()
-                } else {
-                    SoundManager.playWrong()
-                }
-                
-                if (_selectedGrade.value < 10 && _score.value >= 4) {
-                    stateManager.unlockGrade(_selectedGrade.value + 1)
-                }
-                onQuizFinished()
-            }
+            // Stage complete or game over
+            finishQuiz()
         }
     }
 
-    // Hint: 50-50 logic - leaves correct answer and 1 random incorrect answer
-    fun useFiftyFifty() {
-        val currentList = _questions.value
-        val currentIndex = _currentQuestionIndex.value
-        if (currentList.isEmpty() || currentIndex >= currentList.size || _isFiftyFiftyUsed.value) return
+    private fun finishQuiz() {
+        _quizFinished.value = true
+        cancelTimer()
+        if (_lives.value > 0 && _correctAnswersCount.value >= (_questions.value.size / 2.0)) {
+            SoundManager.playStageComplete()
+        } else {
+            SoundManager.playGameOver()
+        }
+    }
 
-        val correctIndex = currentList[currentIndex].correctAnswerIndex
-        val allIndices = (0..3).toMutableList()
-        allIndices.remove(correctIndex)
+    // ═══════════════════════════════════════
+    // ENCOURAGING MESSAGES GENERATOR
+    // ═══════════════════════════════════════
+
+    private fun getRandomEncouragement(isCorrect: Boolean, isSinhala: Boolean): String {
+        val rand = Random()
+        if (isCorrect) {
+            val eng = listOf(
+                "Excellent! 🌟",
+                "Amazing! Keep going! 🚀",
+                "Brilliant! You're on fire! 🔥",
+                "Perfect! 💯",
+                "Outstanding! ⭐"
+            )
+            val sin = listOf(
+                "විශිෂ්ටයි! 🌟",
+                "පුදුමාකාරයි! ඉදිරියටම යමු! 🚀",
+                "පණ්ඩිතයි! දිගටම කරගෙන යන්න! 🔥",
+                "පරිපූර්ණයි! 💯",
+                "සුවිශේෂීයි! ⭐"
+            )
+            return if (isSinhala) sin[rand.nextInt(sin.size)] else eng[rand.nextInt(eng.size)]
+        } else {
+            val eng = listOf(
+                "Don't give up! Try again! 💪",
+                "Almost there! Keep trying! 🎯",
+                "You can do it! 🌟",
+                "Learn from mistakes! 📚"
+            )
+            val sin = listOf(
+                "අත්හරින්න එපා! නැවත උත්සාහ කරන්න! 💪",
+                "ලඟ ලඟම එනවා! දිගටම උත්සාහ කරන්න! 🎯",
+                "ඔබට එය කළ හැකියි! 🌟",
+                "වැරදිවලින් ඉගෙන ගනිමු! 📚"
+            )
+            return if (isSinhala) sin[rand.nextInt(sin.size)] else eng[rand.nextInt(eng.size)]
+        }
+    }
+
+    // ═══════════════════════════════════════
+    // HELPERS & SPELLS (50/50, Hint)
+    // ═══════════════════════════════════════
+
+    fun useFiftyFifty() {
+        if (_isFiftyFiftyUsed.value || _selectedAnswerIndex.value != null || _quizFinished.value) return
+        val currentQ = _questions.value.getOrNull(_currentIndex.value) ?: return
+
+        val correctIndex = currentQ.correctAnswerIndex
+        val wrongIndices = (0..3).filter { it != correctIndex }
         
-        // Randomly choose 1 incorrect to keep, hide the other 2
-        allIndices.shuffle()
-        val toDisable = allIndices.take(2).toSet()
-        
-        _disabledOptions.value = toDisable
+        // Disable two random incorrect indices
+        val rand = Random()
+        val pickedWrong = wrongIndices.shuffled(rand).take(2).toSet()
+
+        _disabledOptions.value = pickedWrong
         _isFiftyFiftyUsed.value = true
+        SoundManager.playLevelUp() // magical sparkle sounds
     }
 
     fun useHint(): Boolean {
         if (_hintsCount.value > 0) {
             _hintsCount.value -= 1
-            _earnedXp.value -= 5
+            adjustScore(-5)
+            // Trigger floating deduction note
+            _floatingScoreAnimation.value = "-5 (Hint / ඉඟිය)"
+            SoundManager.playHintUsed()
+            viewModelScope.launch {
+                delay(1200)
+                if (_floatingScoreAnimation.value == "-5 (Hint / ඉඟිය)") {
+                    _floatingScoreAnimation.value = null
+                }
+            }
             return true
         }
         return false
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        cancelTimer()
     }
 }

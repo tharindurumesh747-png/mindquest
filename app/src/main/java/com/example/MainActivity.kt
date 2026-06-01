@@ -2,190 +2,145 @@ package com.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.Crossfade
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import com.example.ui.screens.*
-import com.example.ui.theme.FantasyThemes
-
-sealed class Screen {
-    object Splash : Screen()
-    object Home : Screen()
-    object GradeSelect : Screen()
-    object SubjectSelect : Screen()
-    object LevelSelect : Screen()
-    object Quiz : Screen()
-    object Result : Screen()
-}
+import com.example.ui.theme.MindQuestTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        SoundManager.init(applicationContext)
-        val gameViewModel = androidx.lifecycle.ViewModelProvider(this)[GameViewModel::class.java]
-        gameViewModel.stateManager.init(applicationContext)
         
-        setContent {
-            val currentThemeName by gameViewModel.stateManager.theme.collectAsState()
-            val theme = FantasyThemes.getTheme(currentThemeName)
+        // Initialize SoundManager
+        SoundManager.init(applicationContext)
 
-            // Progressive state navigation layout
-            val screenStack = remember { mutableStateListOf<Screen>(Screen.Splash) }
-            val currentScreen = screenStack.lastOrNull() ?: Screen.Splash
-
-            fun navigateTo(screen: Screen) {
-                screenStack.add(screen)
-            }
-
-            fun navigateBack() {
-                if (screenStack.size > 1) {
-                    screenStack.removeAt(screenStack.lastIndex)
+        // Register process lifecycle callbacks to track when the app state changes
+        try {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) {
+                    super.onStart(owner)
+                    SoundManager.resumeMusic()
                 }
-            }
 
-            // Handle system-level physical Back buttons on low-end phones
-            BackHandler(enabled = screenStack.size > 1) {
-                navigateBack()
-            }
+                override fun onStop(owner: LifecycleOwner) {
+                    super.onStop(owner)
+                    SoundManager.pauseMusic()
+                }
+            })
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
-            MaterialTheme {
-                Crossfade(
-                    targetState = currentScreen,
-                    modifier = Modifier.fillMaxSize(),
-                    label = "navigation"
-                ) { screen ->
-                    when (screen) {
-                        Screen.Splash -> {
-                            SplashScreen(
-                                theme = theme,
-                                onEnterPortal = {
-                                    screenStack.clear()
-                                    screenStack.add(Screen.Home)
+        setContent {
+            MindQuestTheme {
+                val gameViewModel: GameViewModel = viewModel()
+                val navController = rememberNavController()
+
+                NavHost(navController = navController, startDestination = "splash") {
+                    composable("splash") {
+                        SplashScreen(
+                            onNavigateHome = {
+                                navController.navigate("home") {
+                                    popUpTo("splash") { inclusive = true }
                                 }
-                            )
-                        }
-
-                        Screen.Home -> {
-                            HomeScreen(
-                                theme = theme,
-                                stateManager = gameViewModel.stateManager,
-                                onStartAdventure = {
-                                    navigateTo(Screen.GradeSelect)
-                                },
-                                onExit = {
-                                    finishAffinity()
+                            }
+                        )
+                    }
+                    composable("home") {
+                        Home(
+                            viewModel = gameViewModel,
+                            onNavigateStart = {
+                                navController.navigate("grade_select")
+                            },
+                            onNavigateSettings = {
+                                navController.navigate("settings")
+                            },
+                            onExitApp = {
+                                finishAffinity()
+                            }
+                        )
+                    }
+                    composable("grade_select") {
+                        GradeSelect(
+                            viewModel = gameViewModel,
+                            onGradeSelected = {
+                                navController.navigate("subject_select")
+                            }
+                        )
+                    }
+                    composable("subject_select") {
+                        SubjectSelect(
+                            viewModel = gameViewModel,
+                            onSubjectSelected = {
+                                navController.navigate("level_select")
+                            }
+                        )
+                    }
+                    composable("level_select") {
+                        LevelSelect(
+                            viewModel = gameViewModel,
+                            onLevelSelected = {
+                                gameViewModel.resetQuizState()
+                                navController.navigate("quiz")
+                            }
+                        )
+                    }
+                    composable("quiz") {
+                        QuizScreen(
+                            viewModel = gameViewModel,
+                            onNavigateResults = {
+                                navController.navigate("results") {
+                                    popUpTo("quiz") { inclusive = true }
                                 }
-                            )
-                        }
-
-                        Screen.GradeSelect -> {
-                            GradeSelectScreen(
-                                theme = theme,
-                                stateManager = gameViewModel.stateManager,
-                                onGradeSelected = { grade ->
-                                    gameViewModel.selectGrade(grade)
-                                    navigateTo(Screen.SubjectSelect)
-                                },
-                                onBack = { navigateBack() }
-                            )
-                        }
-
-                        Screen.SubjectSelect -> {
-                            val selectedGrade by gameViewModel.selectedGrade.collectAsState()
-                            SubjectSelectScreen(
-                                grade = selectedGrade,
-                                theme = theme,
-                                stateManager = gameViewModel.stateManager,
-                                onSubjectSelected = { subject ->
-                                    gameViewModel.selectSubject(subject)
-                                    navigateTo(Screen.LevelSelect)
-                                },
-                                onBack = { navigateBack() }
-                            )
-                        }
-
-                        Screen.LevelSelect -> {
-                            val selectedGrade by gameViewModel.selectedGrade.collectAsState()
-                            val selectedSubject by gameViewModel.selectedSubject.collectAsState()
-                            LevelSelectScreen(
-                                grade = selectedGrade,
-                                subject = selectedSubject,
-                                theme = theme,
-                                stateManager = gameViewModel.stateManager,
-                                onLevelSelected = { level ->
-                                    gameViewModel.selectLevel(level)
-                                    gameViewModel.startQuiz()
-                                    navigateTo(Screen.Quiz)
-                                },
-                                onBack = { navigateBack() }
-                            )
-                        }
-
-                        Screen.Quiz -> {
-                            QuizScreen(
-                                viewModel = gameViewModel,
-                                theme = theme,
-                                onQuizFinished = {
-                                    screenStack.remove(Screen.Quiz)
-                                    navigateTo(Screen.Result)
-                                },
-                                onBack = {
-                                    navigateBack()
+                            },
+                            onNavigateBackToHome = {
+                                navController.navigate("home") {
+                                    popUpTo("home") { inclusive = false }
                                 }
-                            )
-                        }
-
-                        Screen.Result -> {
-                            val selectedGrade by gameViewModel.selectedGrade.collectAsState()
-                            val selectedSubject by gameViewModel.selectedSubject.collectAsState()
-                            val selectedLevel by gameViewModel.selectedLevel.collectAsState()
-                            val score by gameViewModel.score.collectAsState()
-                            val earnedXp by gameViewModel.earnedXp.collectAsState()
-
-                            val nextLevel = selectedLevel + 1
-                            val isNextLevelAvailable = nextLevel <= 3
-
-                            val onNextLevelAction: (() -> Unit)? = if (isNextLevelAvailable) {
-                                {
-                                    gameViewModel.selectLevel(nextLevel)
-                                    gameViewModel.startQuiz()
-                                    screenStack.remove(Screen.Result)
-                                    navigateTo(Screen.Quiz)
+                            }
+                        )
+                    }
+                    composable("results") {
+                        ResultsScreen(
+                            viewModel = gameViewModel,
+                            onNavigatePlayAgain = {
+                                navController.navigate("quiz") {
+                                    popUpTo("results") { inclusive = true }
                                 }
-                            } else null
-
-                            ResultScreen(
-                                score = score,
-                                earnedXp = earnedXp,
-                                grade = selectedGrade,
-                                subject = selectedSubject,
-                                level = selectedLevel,
-                                theme = theme,
-                                stateManager = gameViewModel.stateManager,
-                                onRetry = {
-                                    gameViewModel.startQuiz()
-                                    screenStack.remove(Screen.Result)
-                                    navigateTo(Screen.Quiz)
-                                },
-                                onNextLevel = onNextLevelAction,
-                                onReturnToMap = {
-                                    screenStack.clear()
-                                    screenStack.add(Screen.Home)
-                                    screenStack.add(Screen.GradeSelect)
-                                    screenStack.add(Screen.SubjectSelect)
+                            },
+                            onNavigateBackToHome = {
+                                navController.navigate("home") {
+                                    popUpTo("home") { inclusive = false }
                                 }
-                            )
-                        }
+                            }
+                        )
+                    }
+                    composable("settings") {
+                        SettingsScreen(
+                            onNavigateBack = {
+                                navController.popBackStack()
+                            }
+                        )
                     }
                 }
             }
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        SoundManager.stopAllSounds()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        SoundManager.stopAllSounds()
+        SoundManager.release()
     }
 }
