@@ -204,15 +204,13 @@ fun QuizScreen(
                     HeartsRepresentationBar(lives = lives)
                 }
 
-                // ONLINE/OFFLINE STATUS BAR
-                val isOffline by viewModel.isOfflineMode.collectAsState()
-                
+                // OFFLINE STATUS BAR
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (isOffline) Color(0x33F59E0B) else Color(0x3310B981))
-                        .border(1.dp, if (isOffline) Color(0x66F59E0B) else Color(0x6610B981), RoundedCornerShape(8.dp))
+                        .background(Color(0x33F59E0B))
+                        .border(1.dp, Color(0x66F59E0B), RoundedCornerShape(8.dp))
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -225,23 +223,19 @@ fun QuizScreen(
                             modifier = Modifier
                                 .size(8.dp)
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(if (isOffline) Color(0xFFF59E0B) else Color(0xFF10B981))
+                                .background(Color(0xFFF59E0B))
                         )
                         Text(
-                            text = if (isOffline) {
-                                if (isSinhala) "Offline: ප්‍රශ්න 10 ක් ඇත" else "Offline: 10 questions available"
-                            } else {
-                                if (isSinhala) "Online: ප්‍රශ්න 20 ක් සූදානම්!" else "Online: 20 questions loaded!"
-                            },
+                            text = if (isSinhala) "නොබැඳි මාදිලිය: ප්‍රශ්න 10 ක් ඇත" else "Offline Quest: 10 questions ready",
                             color = Color.White.copy(alpha = 0.9f),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
 
-                    // Refresh Button
+                    // Refresh Button (Triggers local shuffle and load)
                     Text(
-                        text = if (isSinhala) "ප්‍රශ්න අලුත් කරන්න ↻" else "Refresh Questions ↻",
+                        text = if (isSinhala) "නැවත සකසන්න ↻" else "Reshuffle ↻",
                         color = theme.accent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -316,7 +310,7 @@ fun QuizScreen(
                         .testTag("question_card")
                 ) {
                     Text(
-                        text = currentQuestion.question,
+                        text = if (isSinhala) currentQuestion.questionSinhala else currentQuestion.question,
                         color = Color.White,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -370,7 +364,8 @@ fun QuizScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    currentQuestion.options.forEachIndexed { index, option ->
+                    val optionsToRender = if (isSinhala) currentQuestion.optionsSinhala else currentQuestion.options
+                    optionsToRender.forEachIndexed { index, option ->
                         val isDisabled = disabledOptions.contains(index)
                         
                         if (!isDisabled) {

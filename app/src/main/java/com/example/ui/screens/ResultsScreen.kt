@@ -53,17 +53,17 @@ fun ResultScreen(
 
     // RPG Titles mapping to player performance
     val (starCount, perfTitle, perfDesc) = when (score) {
-        5 -> Triple(
+        10 -> Triple(
             3,
             if (isSinhala) "මහා ප්‍රඥාවන්තයා!" else "LEGENDARY ARITHMANCER!",
             if (isSinhala) "ඔබ ප්‍රශ්න සියල්ලටම නිවැරදිව පිළිතුරු සපයමින් මනාව ජය ලබා ඇත!" else "You achieved perfect mastery in this educational quest!"
         )
-        3, 4 -> Triple(
+        in 7..9 -> Triple(
             2,
             if (isSinhala) "ධෛර්යවන්ත රණශූරයා!" else "VALIANT KNIGHT!",
             if (isSinhala) "ඔබ විශිෂ්ට ජයක් ලබා ගෙන ඇත! තව එක අඩියක් ඉදිරියට තබන්න." else "Excellent work! Keep defending the towers of knowledge."
         )
-        1, 2 -> Triple(
+        in 4..6 -> Triple(
             1,
             if (isSinhala) "ආරම්භක වීරයා!" else "NOBLE SQUIRE!",
             if (isSinhala) "ජයග්‍රහණය පෙනෙන මානයේ ඇත. නැවත උත්සාහ කරන්න!" else "A solid effort. Practice more to refine your magic spells."
@@ -181,7 +181,7 @@ fun ResultScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "$score / 5",
+                            text = "$score / 10",
                             color = Color.White,
                             fontSize = 28.sp,
                             fontWeight = FontWeight.Black

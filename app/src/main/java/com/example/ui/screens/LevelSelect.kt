@@ -9,7 +9,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MilitaryTech
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -20,12 +22,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.StateManager
+import com.example.data.PlaySessionManager
 import com.example.ui.components.AnimatedStarField
 import com.example.ui.theme.FantasyTheme
 
@@ -53,6 +57,15 @@ fun LevelSelectScreen(
 
     val level3Title = if (isSinhala) "පියවර 03: තරු මාලිගාව" else "STAGE III: Citadel of Stars"
     val level3Desc = if (isSinhala) "මහා ප්‍රඥාවන්ත බුද්ධිමතුන් සඳහා" else "Legendary educational battle for the master rank"
+
+    val context = LocalContext.current
+    val star1 = PlaySessionManager.getStageStars(context, grade, subject, 1)
+    val star2 = PlaySessionManager.getStageStars(context, grade, subject, 2)
+    val star3 = PlaySessionManager.getStageStars(context, grade, subject, 3)
+
+    val isUnlocked1 = PlaySessionManager.isStageUnlocked(context, grade, subject, 1)
+    val isUnlocked2 = PlaySessionManager.isStageUnlocked(context, grade, subject, 2)
+    val isUnlocked3 = PlaySessionManager.isStageUnlocked(context, grade, subject, 3)
 
     Box(
         modifier = Modifier
@@ -120,6 +133,8 @@ fun LevelSelectScreen(
                     description = level1Desc,
                     color = theme.primary,
                     theme = theme,
+                    isUnlocked = isUnlocked1,
+                    stars = star1,
                     onClick = { onLevelSelected(1) }
                 )
 
@@ -129,6 +144,8 @@ fun LevelSelectScreen(
                     description = level2Desc,
                     color = theme.secondary,
                     theme = theme,
+                    isUnlocked = isUnlocked2,
+                    stars = star2,
                     onClick = { onLevelSelected(2) }
                 )
 
@@ -138,6 +155,8 @@ fun LevelSelectScreen(
                     description = level3Desc,
                     color = theme.portalColor,
                     theme = theme,
+                    isUnlocked = isUnlocked3,
+                    stars = star3,
                     onClick = { onLevelSelected(3) }
                 )
             }
@@ -152,19 +171,21 @@ fun LevelStageCard(
     description: String,
     color: Color,
     theme: FantasyTheme,
+    isUnlocked: Boolean,
+    stars: Int,
     onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(theme.surface.copy(alpha = 0.4f))
+            .background(if (isUnlocked) theme.surface.copy(alpha = 0.4f) else theme.surface.copy(alpha = 0.15f))
             .border(
                 width = 1.dp,
-                color = color.copy(alpha = 0.5f),
+                color = if (isUnlocked) color.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.15f),
                 shape = RoundedCornerShape(16.dp)
             )
-            .clickable(onClick = onClick)
+            .clickable(enabled = isUnlocked, onClick = onClick)
             .padding(16.dp)
     ) {
         Row(
@@ -172,44 +193,70 @@ fun LevelStageCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Level Badge Block
+            // Level Badge Block (containing either Lock icon or MilitaryTech badge)
             Box(
                 modifier = Modifier
                     .size(52.dp)
                     .clip(RoundedCornerShape(26.dp))
-                    .background(color.copy(alpha = 0.15f))
-                    .border(2.dp, color, RoundedCornerShape(26.dp)),
+                    .background(if (isUnlocked) color.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.05f))
+                    .border(2.dp, if (isUnlocked) color else Color.White.copy(alpha = 0.2f), RoundedCornerShape(26.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.MilitaryTech,
-                    contentDescription = "Stage badge",
-                    tint = color,
-                    modifier = Modifier.size(28.dp)
-                )
+                if (isUnlocked) {
+                    Icon(
+                        imageVector = Icons.Default.MilitaryTech,
+                        contentDescription = "Stage badge",
+                        tint = color,
+                        modifier = Modifier.size(28.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Stage locked",
+                        tint = Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
 
             // Texts
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    color = Color.White,
+                    color = if (isUnlocked) Color.White else Color.White.copy(alpha = 0.5f),
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.SansSerif
                 )
                 Text(
                     text = description,
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = if (isUnlocked) Color.White.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.3f),
                     fontSize = 12.sp,
                     fontFamily = FontFamily.SansSerif
                 )
+                
+                // Show stars if completed
+                if (isUnlocked && stars >= 0) {
+                    Row(
+                        modifier = Modifier.padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        repeat(3) { idx ->
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = "Star",
+                                tint = if (idx < stars) Color(0xFFFBBF24) else Color.White.copy(alpha = 0.15f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
             }
 
-            // Forward Chevron Symbol
+            // Indicator symbol (flash/lock icon)
             Text(
-                text = "⚡",
-                color = color,
+                text = if (isUnlocked) "⚡" else "🔒",
+                color = if (isUnlocked) color else Color.White.copy(alpha = 0.3f),
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )

@@ -7,39 +7,15 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.Question
 import com.example.data.PlaySessionManager
 import com.example.data.QuestionBank
-import com.example.data.QuestionGenerator
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONArray
-import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 class GameViewModel(application: Application) : AndroidViewModel(application) {
     val stateManager = StateManager()
-
-    // Cache of generated questions by key: "grade_subject_lang"
-    private val questionsCache = mutableMapOf<String, MutableList<Question>>()
-    // Track asked questions in this session by key: "grade_subject_lang" to prevent repeats
-    private val shownQuestionsHistory = mutableMapOf<String, MutableSet<String>>()
-
-    init {
-        stateManager.onLanguageChanged = {
-            clearQuestionCache()
-        }
-    }
-
-    fun clearQuestionCache() {
-        questionsCache.clear()
-        shownQuestionsHistory.clear()
-    }
 
     // Level progression selection state
     private val _selectedGrade = MutableStateFlow(1)
@@ -48,24 +24,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedSubject = MutableStateFlow("Math")
     val selectedSubject: StateFlow<String> = _selectedSubject.asStateFlow()
 
-    private val _selectedLevel = MutableStateFlow(1)
+    private val _selectedLevel = MutableStateFlow(1) // mapped to Stage: 1, 2, or 3
     val selectedLevel: StateFlow<Int> = _selectedLevel.asStateFlow()
 
-    // Active Quiz states
+    // Current quiz questions pool
     private val _questions = MutableStateFlow<List<Question>>(emptyList())
     val questions: StateFlow<List<Question>> = _questions.asStateFlow()
 
-    private val _isOfflineMode = MutableStateFlow(false)
-    val isOfflineMode: StateFlow<Boolean> = _isOfflineMode.asStateFlow()
-
     private val _currentQuestionIndex = MutableStateFlow(0)
     val currentQuestionIndex: StateFlow<Int> = _currentQuestionIndex.asStateFlow()
-
-    private val _isLoading = MutableStateFlow(false)
-    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
 
     private val _score = MutableStateFlow(0)
     val score: StateFlow<Int> = _score.asStateFlow()
@@ -76,13 +43,24 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val _lives = MutableStateFlow(3)
     val lives: StateFlow<Int> = _lives.asStateFlow()
 
-    // Hint and visual Feedback State
+    // Screen state flags
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _isOfflineMode = MutableStateFlow(true)
+    val isOfflineMode: StateFlow<Boolean> = _isOfflineMode.asStateFlow()
+
+    // Lifeline: 50/50 state
     private val _isFiftyFiftyUsed = MutableStateFlow(false)
     val isFiftyFiftyUsed: StateFlow<Boolean> = _isFiftyFiftyUsed.asStateFlow()
 
     private val _disabledOptions = MutableStateFlow<Set<Int>>(emptySet())
     val disabledOptions: StateFlow<Set<Int>> = _disabledOptions.asStateFlow()
 
+    // Option selection visual feedback state
     private val _selectionFeedback = MutableStateFlow<Int?>(null)
     val selectionFeedback: StateFlow<Int?> = _selectionFeedback.asStateFlow()
 
@@ -97,12 +75,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val isTimeRunning: StateFlow<Boolean> = _isTimeRunning.asStateFlow()
 
     private var timerJob: Job? = null
-
-    // OkHttp Client Configuration for direct REST API
-    private val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(45, TimeUnit.SECONDS)
-        .readTimeout(45, TimeUnit.SECONDS)
-        .build()
 
     fun selectGrade(grade: Int) {
         _selectedGrade.value = grade
@@ -137,95 +109,42 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             _error.value = null
             
             val context = getApplication<Application>()
-            val lang = stateManager.language.value
             val grade = _selectedGrade.value
             val subject = _selectedSubject.value
+            val stage = _selectedLevel.value
 
-            // 1. Perform daily check on persistent question history
+            // Perform daily check on persistent question history
             PlaySessionManager.checkDailyReset(context)
 
             try {
-                // 2. Fetch the 10 built-in offline questions for current selection
-                val builtInQuestions = QuestionBank.getQuestions(grade, subject, lang)
+                // Fetch the 10 offline questions for current selection
+                val offlineQuestions = QuestionBank.getQuestions(grade, subject, stage)
 
-                // 3. Try to load 10 bonus questions from Gemini with 30-day cache protection
-                var geminiQuestions = emptyList<Question>()
-                val cacheValid = PlaySessionManager.isCacheValid(context, grade, subject, lang)
-
-                if (cacheValid && !forceRefresh) {
-                    val cached = PlaySessionManager.getCachedQuestions(context, grade, subject, lang)
-                    if (cached != null) {
-                        geminiQuestions = cached
-                        Log.d("GameViewModel", "Loaded Gemini bonus questions from 30-day cache.")
-                    }
+                if (offlineQuestions.isEmpty()) {
+                    _error.value = "No questions loaded. Tap retry to try again."
+                    _isLoading.value = false
+                    return@launch
                 }
 
-                if (geminiQuestions.isEmpty() || !cacheValid || forceRefresh) {
-                    try {
-                        Log.d("GameViewModel", "Querying Gemini API for 10 fresh bonus questions...")
-                        val fresh = QuestionGenerator.generateQuestions(grade, subject, lang)
-                        if (fresh.isNotEmpty()) {
-                            PlaySessionManager.saveCachedQuestions(context, grade, subject, lang, fresh)
-                            geminiQuestions = fresh
-                        }
-                    } catch (ex: Exception) {
-                        Log.e("GameViewModel", "Gemini fetch failed, operating in offline-only fallback mode: ${ex.message}", ex)
-                    }
-                }
-
-                // 4. Merge offline questions with Gemini questions
-                val combinedPool = mutableListOf<Question>()
-                combinedPool.addAll(builtInQuestions)
-                combinedPool.addAll(geminiQuestions)
-
-                // Remove exact ID duplicates
-                val distinctPool = combinedPool.distinctBy { it.questionId }
-
-                // 5. Track unshown questions to guarantee NO repeats within session & 24H persistent period
-                var availableUnshown = distinctPool.filter { !PlaySessionManager.isQuestionRepeat(context, it) }
-
-                // 6. Handle exhaustion within round
-                if (availableUnshown.isEmpty()) {
-                    val exhaustionMsg = if (lang == "si") {
-                        "ඔබ පවතින සියලුම ප්‍රශ්න සඳහා පිළිතුරු සපයා ඇත! විශිෂ්ටයි! නව ප්‍රශ්න ලබාගනිමින් පවතී..."
-                    } else {
-                        "You have answered all available questions! Great job! Fetching new questions..."
-                    }
-                    _error.value = exhaustionMsg
-
-                    // Clear persistent shown history so player can start fresh in the next round
-                    PlaySessionManager.clearPersistentShownList(context)
-                    PlaySessionManager.clearCache(context, grade, subject, lang)
-
-                    // Fetch fresh Gemini bonus questions immediately
-                    try {
-                        val fresh = QuestionGenerator.generateQuestions(grade, subject, lang)
-                        PlaySessionManager.saveCachedQuestions(context, grade, subject, lang, fresh)
-                        geminiQuestions = fresh
-                    } catch (e: Exception) {
-                        Log.e("GameViewModel", "Gemini fetch on exhaustion failed: ${e.message}")
-                    }
-
-                    val reBuiltIn = QuestionBank.getQuestions(grade, subject, lang)
-                    availableUnshown = (reBuiltIn + geminiQuestions).distinctBy { it.questionId }
-                }
-
-                // 7. Establish offline mode flag for UI indicators
-                _isOfflineMode.value = geminiQuestions.isEmpty()
-
-                // 8. Fully shuffle questions and options for active playing round
-                val shuffledFinal = availableUnshown.shuffled().map { q ->
-                    val originalCorrectOption = q.options[q.correctAnswerIndex]
-                    val shuffledOptions = q.options.shuffled()
-                    val newCorrectIndex = shuffledOptions.indexOf(originalCorrectOption)
+                // Shuffling: Every game, fully shuffle question sequences and option arrays
+                // Ensuring dual English and Sinhala options index match the same permutation!
+                val shuffledFinal = offlineQuestions.shuffled().map { q ->
+                    val permutation = (0..3).shuffled()
+                    val originalCorrectEn = q.options[q.correctAnswer]
+                    
+                    val shuffledOptionsEn = permutation.map { q.options[it] }
+                    val shuffledOptionsSi = permutation.map { q.optionsSinhala[it] }
+                    val newCorrectIndex = shuffledOptionsEn.indexOf(originalCorrectEn)
                     
                     q.copy(
-                        options = shuffledOptions,
+                        options = shuffledOptionsEn,
+                        optionsSinhala = shuffledOptionsSi,
                         correctAnswer = newCorrectIndex
                     )
                 }
 
                 _questions.value = shuffledFinal
+                _isOfflineMode.value = true
                 _isLoading.value = false
                 
                 // Track first question as shown as soon as we start
@@ -236,31 +155,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 startTimerLimit()
             } catch (e: Exception) {
                 Log.e("GameViewModel", "Critical failure during question system loading: ${e.message}", e)
-                
-                // Hard-fallback to local offline-only questions
-                val fallbackLocal = QuestionBank.getQuestions(grade, subject, lang)
-                val unshownLocal = fallbackLocal.filter { !PlaySessionManager.isQuestionRepeat(context, it) }
-                val finalFallback = if (unshownLocal.isNotEmpty()) unshownLocal else fallbackLocal
-
-                val shuffledFallback = finalFallback.shuffled().map { q ->
-                    val originalCorrectOption = q.options[q.correctAnswerIndex]
-                    val shuffledOptions = q.options.shuffled()
-                    val newCorrectIndex = shuffledOptions.indexOf(originalCorrectOption)
-                    q.copy(
-                        options = shuffledOptions,
-                        correctAnswer = newCorrectIndex
-                    )
-                }
-
-                _questions.value = shuffledFallback
-                _isOfflineMode.value = true
+                _error.value = "Failed to load offline questions: ${e.message} \nTap retry to try again."
                 _isLoading.value = false
-                
-                if (shuffledFallback.isNotEmpty()) {
-                    PlaySessionManager.markAsShown(context, shuffledFallback[0])
-                }
-                
-                startTimerLimit()
             }
         }
     }
@@ -310,7 +206,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _selectionFeedback.value = selectedIndex
         _isCorrectFeedback.value = isCorrect
 
-        // Play synthesized sound effect
+        // Play synthesized sound effect & award XP on correct choice
         if (isCorrect) {
             SoundManager.playCorrect()
             _score.value += 1
@@ -341,6 +237,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 stateManager.completeQuiz()
                 
+                // Save progress for stage completion! (Save stars using SharedPreferences)
+                val context = getApplication<Application>()
+                PlaySessionManager.markStageCompleted(context, _selectedGrade.value, _selectedSubject.value, _selectedLevel.value, _score.value)
+                
                 // Check performance on result screen
                 val passed = _score.value >= (currentList.size * 0.5f).toInt()
                 if (passed) {
@@ -349,7 +249,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     SoundManager.playWrong()
                 }
                 
-                if (_selectedGrade.value < 10 && _score.value >= 3) {
+                if (_selectedGrade.value < 10 && _score.value >= 4) {
                     stateManager.unlockGrade(_selectedGrade.value + 1)
                 }
                 onQuizFinished()
