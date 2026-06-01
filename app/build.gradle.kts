@@ -72,4 +72,7 @@ dependencies {
   implementation(libs.okhttp)
   implementation(libs.retrofit)
   ksp(libs.androidx.room.compiler)
-  ksp(l
+  ksp(libs.moshi.kotlin.codegen)
+  debugImplementation(libs.androidx.compose.ui.tooling)
+  debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
