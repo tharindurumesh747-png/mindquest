@@ -28,8 +28,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        SoundManager.init(applicationContext)
+        val gameViewModel = androidx.lifecycle.ViewModelProvider(this)[GameViewModel::class.java]
+        gameViewModel.stateManager.init(applicationContext)
+        
         setContent {
-            val gameViewModel: GameViewModel = viewModel()
             val currentThemeName by gameViewModel.stateManager.theme.collectAsState()
             val theme = FantasyThemes.getTheme(currentThemeName)
 

@@ -21,6 +21,22 @@ import java.util.concurrent.TimeUnit
 class GameViewModel : ViewModel() {
     val stateManager = StateManager()
 
+    // Cache of generated questions by key: "grade_subject_lang"
+    private val questionsCache = mutableMapOf<String, MutableList<Question>>()
+    // Track asked questions in this session by key: "grade_subject_lang" to prevent repeats
+    private val shownQuestionsHistory = mutableMapOf<String, MutableSet<String>>()
+
+    init {
+        stateManager.onLanguageChanged = {
+            clearQuestionCache()
+        }
+    }
+
+    fun clearQuestionCache() {
+        questionsCache.clear()
+        shownQuestionsHistory.clear()
+    }
+
     // Level progression selection state
     private val _selectedGrade = MutableStateFlow(1)
     val selectedGrade: StateFlow<Int> = _selectedGrade.asStateFlow()
@@ -108,7 +124,7 @@ class GameViewModel : ViewModel() {
         loadQuestions()
     }
 
-    private fun loadQuestions() {
+    fun loadQuestions() {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
@@ -116,25 +132,55 @@ class GameViewModel : ViewModel() {
             val lang = stateManager.language.value
             val grade = _selectedGrade.value
             val subject = _selectedSubject.value
+            val cacheKey = "${grade}_${subject}_${lang}"
             
-            delay(800) // Aesthetic delay for retro loader feel
-            
-            val offlineQuestions = QuestionPool.getOfflineQuestions(grade, subject, lang).toMutableList()
-            offlineQuestions.shuffle() // Never show same order
-            
-            // Weave in exactly 5 unique random bonus questions to satisfy "appear at any time during gameplay" and "200+ bonus questions"
-            val bonusPool = QuestionPool.getBonusQuestions(lang).shuffled()
-            val injectCount = 5
-            for (i in 0 until injectCount) {
-                if (i < bonusPool.size) {
-                    val insertPos = (0..offlineQuestions.size).random()
-                    offlineQuestions.add(insertPos, bonusPool[i])
+            try {
+                // Ensure a shownQuestions list exists for this key
+                val shownSet = shownQuestionsHistory.getOrPut(cacheKey) { mutableSetOf() }
+                
+                // Get list belonging to key in our pool
+                val pool = questionsCache.getOrPut(cacheKey) { mutableListOf() }
+                
+                // Filter unasked questions
+                var unshown = pool.filter { !shownSet.contains(it.question) }
+                
+                if (unshown.size < 20) {
+                    // Fetch 20 fresh ones from Gemini
+                    val fresh = com.example.data.QuestionGenerator.generateQuestions(grade, subject, lang)
+                    pool.addAll(fresh)
+                    
+                    // Filter again with new added pool
+                    unshown = pool.filter { !shownSet.contains(it.question) }
                 }
+                
+                // We must take exactly 20 questions
+                val selectedQuestions = if (unshown.size >= 20) {
+                    unshown.shuffled().take(20)
+                } else {
+                    // If we still can't satisfy 20 due to duplicates or API constraints, 
+                    // clear the history for this session, shuffle the entire pool, and use them
+                    shownSet.clear()
+                    if (pool.size >= 20) {
+                        pool.shuffled().take(20)
+                    } else {
+                        // Fallback to offline questions to fill up 20 questions if pool is somehow smaller than 20
+                        val offline = QuestionPool.getOfflineQuestions(grade, subject, lang).shuffled()
+                        val combined = (pool + offline).distinctBy { it.question }
+                        combined.take(20)
+                    }
+                }
+                
+                // Track these questions as shown in this session
+                shownSet.addAll(selectedQuestions.map { it.question })
+                
+                // Set the questions state flow
+                _questions.value = selectedQuestions
+                _isLoading.value = false
+                startTimerLimit()
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to invoke wizard scroll power. Please check network/secrets configuration."
+                _isLoading.value = false
             }
-            
-            _questions.value = offlineQuestions
-            _isLoading.value = false
-            startTimerLimit()
         }
     }
 
@@ -164,20 +210,10 @@ class GameViewModel : ViewModel() {
     }
 
     private fun onTimerExpired() {
-        viewModelScope.launch {
-            _lives.value = (_lives.value - 1).coerceAtLeast(0)
-            _isCorrectFeedback.value = false
-            _selectionFeedback.value = -1 // No selection feedback index
-            
-            SoundManager.playWrong()
-            
-            delay(1500)
-            _selectionFeedback.value = null
-            _isCorrectFeedback.value = null
-            _disabledOptions.value = emptySet()
-            
-            goToNextQuestionOrFinish()
-        }
+        _lives.value = (_lives.value - 1).coerceAtLeast(0)
+        _isCorrectFeedback.value = false
+        _selectionFeedback.value = -1 // No selection feedback index
+        SoundManager.playWrong()
     }
 
     // Submitting selection for current question
@@ -196,56 +232,46 @@ class GameViewModel : ViewModel() {
         // Play synthesized sound effect
         if (isCorrect) {
             SoundManager.playCorrect()
+            _score.value += 1
+            _earnedXp.value += 20 // 20 XP per correct question
+            stateManager.addXp(20)
         } else {
             SoundManager.playWrong()
-        }
-
-        viewModelScope.launch {
-            if (isCorrect) {
-                _score.value += 1
-                _earnedXp.value += 20 // 20 XP per correct question
-                stateManager.addXp(20)
-            } else {
-                _lives.value = (_lives.value - 1).coerceAtLeast(0)
-            }
-
-            delay(1500) // Allow reading state in dynamic ui colors
-            
-            _selectionFeedback.value = null
-            _isCorrectFeedback.value = null
-            _disabledOptions.value = emptySet()
-
-            if (_lives.value <= 0) {
-                onQuizFinished()
-            } else {
-                goToNextQuestionOrFinish(onQuizFinished)
-            }
+            _lives.value = (_lives.value - 1).coerceAtLeast(0)
         }
     }
 
-    private fun goToNextQuestionOrFinish(onQuizFinished: (() -> Unit)? = null) {
-        val currentList = _questions.value
-        val nextIdx = _currentQuestionIndex.value + 1
-        
-        if (nextIdx < currentList.size) {
-            _currentQuestionIndex.value = nextIdx
-            SoundManager.playWhoosh()
-            startTimerLimit()
+    fun goToNextQuestion(onQuizFinished: () -> Unit) {
+        _selectionFeedback.value = null
+        _isCorrectFeedback.value = null
+        _disabledOptions.value = emptySet()
+
+        if (_lives.value <= 0) {
+            onQuizFinished()
         } else {
-            stateManager.completeQuiz()
+            val currentList = _questions.value
+            val nextIdx = _currentQuestionIndex.value + 1
             
-            // Check performance on result screen
-            val passed = _score.value >= (currentList.size * 0.5f).toInt()
-            if (passed) {
-                SoundManager.playVictoryFanfare()
+            if (nextIdx < currentList.size) {
+                _currentQuestionIndex.value = nextIdx
+                SoundManager.playWhoosh()
+                startTimerLimit()
             } else {
-                SoundManager.playWrong()
+                stateManager.completeQuiz()
+                
+                // Check performance on result screen
+                val passed = _score.value >= (currentList.size * 0.5f).toInt()
+                if (passed) {
+                    SoundManager.playVictoryFanfare()
+                } else {
+                    SoundManager.playWrong()
+                }
+                
+                if (_selectedGrade.value < 10 && _score.value >= 3) {
+                    stateManager.unlockGrade(_selectedGrade.value + 1)
+                }
+                onQuizFinished()
             }
-            
-            if (_selectedGrade.value < 10 && _score.value >= 3) {
-                stateManager.unlockGrade(_selectedGrade.value + 1)
-            }
-            onQuizFinished?.invoke()
         }
     }
 

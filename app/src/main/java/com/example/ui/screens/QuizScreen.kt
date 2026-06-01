@@ -83,6 +83,11 @@ fun QuizScreen(
     val spellFiftyFiftyLabel = if (isSinhala) "50-50 මන්ත්‍රය" else "Cast 50-50 Spell"
     val loadingQuestionsText = if (isSinhala) "මන්ත්‍ර ද්වාරයෙන් ප්‍රශ්න කැඳවමින්..." else "Summoning questions from the scrolls..."
     val submitBtnText = if (isSinhala) "තහවුරු කරන්න" else "SUBMIT ANSWER"
+    val nextQuestionBtnText = if (isSinhala) "ඊළඟ ප්‍රශ්නය" else "NEXT QUESTION"
+    val claimResultsBtnText = if (isSinhala) "ප්‍රතිඵල ලබා ගන්න" else "CLAIM GLORY & RESULTS"
+    
+    val isLastQuestion = currentIndex == questions.size - 1
+    val actionBtnText = if (isLastQuestion) claimResultsBtnText else nextQuestionBtnText
     
     // Back dialog localizations
     val dialogTitle = if (isSinhala) "පලා යාමට සූදානම්ද?" else "RETREAT CONFIRMATION"
@@ -336,28 +341,40 @@ fun QuizScreen(
                     }
                 }
 
-                // CONFIRM SUBMIT BUTTON
-                AnimatedVisibility(
-                    visible = selectedOptionIndex != null,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
+                // CONFIRM SUBMIT / NEXT ACTION BUTTON PANEL
+                if (isAnswerActionLocked) {
                     NeonButton(
-                        text = submitBtnText,
+                        text = actionBtnText,
                         theme = theme,
-                        enabled = !isSubmitted,
                         onClick = {
-                            if (selectedOptionIndex != null && !isSubmitted) {
-                                isSubmitted = true
-                                viewModel.submitAnswer(selectedOptionIndex!!, onQuizFinished)
-                            }
+                            viewModel.goToNextQuestion(onQuizFinished)
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp)
-                            .padding(vertical = 4.dp)
-                            .testTag("submit_button")
+                            .testTag("next_question_button")
                     )
+                } else {
+                    AnimatedVisibility(
+                        visible = selectedOptionIndex != null,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        NeonButton(
+                            text = submitBtnText,
+                            theme = theme,
+                            onClick = {
+                                if (selectedOptionIndex != null && !isSubmitted) {
+                                    isSubmitted = true
+                                    viewModel.submitAnswer(selectedOptionIndex!!, onQuizFinished)
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .testTag("submit_button")
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))

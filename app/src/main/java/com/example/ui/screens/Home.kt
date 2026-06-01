@@ -141,9 +141,10 @@ fun HomeScreen(
                         )
                     }
 
+                    val localContext = androidx.compose.ui.platform.LocalContext.current
                     LanguageSelector(
                         currentLang = currentLang,
-                        onLangSelected = { stateManager.switchLanguage(it) }
+                        onLangSelected = { stateManager.switchLanguage(it, localContext) }
                     )
                 }
             }

@@ -10,9 +10,16 @@ object SoundManager {
     private var musicTrack: AudioTrack? = null
     private var isMusicRunning = false
     private var musicThread: Thread? = null
+    private var sharedPrefs: android.content.SharedPreferences? = null
+
+    fun init(context: android.content.Context) {
+        sharedPrefs = context.getSharedPreferences("mindquest_prefs", android.content.Context.MODE_PRIVATE)
+        isMuted = sharedPrefs?.getBoolean("is_muted", false) ?: false
+    }
 
     fun toggleMute(): Boolean {
         isMuted = !isMuted
+        sharedPrefs?.edit()?.putBoolean("is_muted", isMuted)?.apply()
         if (isMuted) {
             stopBackgroundMusic()
         } else {
