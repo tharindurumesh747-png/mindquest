@@ -81,7 +81,7 @@ fun QuizScreen(
     val scoreHeader = if (isSinhala) "පියවර" else "QUESTION"
     val hintButtonLabel = if (isSinhala) "විජ්ජා මන්ත්‍ර ලියවිල්ල" else "WIZARD'S SCROLL HINT"
     val spellFiftyFiftyLabel = if (isSinhala) "50-50 මන්ත්‍රය" else "Cast 50-50 Spell"
-    val loadingQuestionsText = if (isSinhala) "මන්ත්‍ර ද්වාරයෙන් ප්‍රශ්න කැඳවමින්..." else "Summoning questions from the scrolls..."
+    val loadingQuestionsText = if (isSinhala) "ප්‍රශ්න සකස් කරමින් පවතී, කරුණාකර රැඳී සිටින්න..." else "Generating questions, please wait..."
     val submitBtnText = if (isSinhala) "තහවුරු කරන්න" else "SUBMIT ANSWER"
     val nextQuestionBtnText = if (isSinhala) "ඊළඟ ප්‍රශ්නය" else "NEXT QUESTION"
     val claimResultsBtnText = if (isSinhala) "ප්‍රතිඵල ලබා ගන්න" else "CLAIM GLORY & RESULTS"
@@ -128,6 +128,46 @@ fun QuizScreen(
                     fontFamily = FontFamily.SansSerif,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 24.dp)
+                )
+            }
+        } else if (error != null || questions.isEmpty()) {
+            val errorText = error ?: if (isSinhala) "ප්‍රශ්න කිසිවක් සකස් වී නොමැත. නැවත උත්සාහ කරන්න." else "No questions loaded. Tap retry to try again"
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Error",
+                    tint = Color(0xFFEF4444),
+                    modifier = Modifier.size(64.dp)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = errorText,
+                    color = Color(0xFFFCA5A5),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.SansSerif,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp).testTag("error_message")
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                NeonButton(
+                    text = if (isSinhala) "නැවත උත්සාහ කරන්න" else "RETRY",
+                    theme = theme,
+                    onClick = {
+                        SoundManager.playClick()
+                        viewModel.loadQuestions()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .testTag("retry_button")
                 )
             }
         } else if (currentQuestion != null) {

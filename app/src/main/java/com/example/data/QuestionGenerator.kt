@@ -83,7 +83,8 @@ Return ONLY a JSON array, no other text:
             }
           ],
           "generationConfig": {
-            "responseMimeType": "application/json"
+            "responseMimeType": "application/json",
+            "maxOutputTokens": 4000
           }
         }
         """.trimIndent()
@@ -95,12 +96,25 @@ Return ONLY a JSON array, no other text:
             .post(requestBody)
             .build()
 
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw Exception("HTTP Error: ${response.code}")
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorPayload = response.body?.string() ?: ""
+                    val errorMsg = "Gemini API HTTP Error Code: ${response.code}. Payload: $errorPayload"
+                    android.util.Log.e("QuestionGenerator", errorMsg)
+                    throw Exception(errorMsg)
+                }
+                val body = response.body?.string() ?: throw Exception("Empty response body from Gemini API")
+                try {
+                    parseQuestionsJson(body, grade, subject, language)
+                } catch (pe: Exception) {
+                    android.util.Log.e("QuestionGenerator", "JSON parsing of Gemini response failed! Raw response payload: $body", pe)
+                    throw Exception("Failed to parse Gemini generated questions list: ${pe.message}")
+                }
             }
-            val body = response.body?.string() ?: throw Exception("Empty response body")
-            parseQuestionsJson(body, grade, subject, language)
+        } catch (e: Exception) {
+            android.util.Log.e("QuestionGenerator", "Critical failure during Gemini API invocation: ${e.message}", e)
+            throw Exception("Magic portal error: ${e.message ?: "Check network configuration / secrets."}")
         }
     }
 
@@ -121,6 +135,12 @@ Return ONLY a JSON array, no other text:
             rawText = rawText.substring(0, rawText.length - 3)
         }
         rawText = rawText.trim()
+
+        val startIndex = rawText.indexOf("[")
+        val endIndex = rawText.lastIndexOf("]")
+        if (startIndex != -1 && endIndex != -1 && endIndex > startIndex) {
+            rawText = rawText.substring(startIndex, endIndex + 1)
+        }
 
         val array = JSONArray(rawText)
         val questions = mutableListOf<Question>()
