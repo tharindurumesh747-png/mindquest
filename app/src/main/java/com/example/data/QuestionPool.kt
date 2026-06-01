@@ -7,11 +7,13 @@ data class Question(
     val grade: Int,
     val subject: String,
     val difficulty: String,
-    val hint: String
+    val hint: String,
+    val id: String = ""
 ) {
     // Backward compatibility getters for previous screens reading .text and .correctAnswerIndex
     val text: String get() = question
     val correctAnswerIndex: Int get() = correctAnswer
+    val questionId: String get() = if (id.isNotEmpty()) id else "grade${grade}_${subject}_${question.hashCode()}"
 }
 
 object QuestionPool {

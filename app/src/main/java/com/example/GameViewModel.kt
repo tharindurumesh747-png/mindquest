@@ -1,9 +1,13 @@
 package com.example
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.Question
-import com.example.data.QuestionPool
+import com.example.data.PlaySessionManager
+import com.example.data.QuestionBank
+import com.example.data.QuestionGenerator
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +22,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-class GameViewModel : ViewModel() {
+class GameViewModel(application: Application) : AndroidViewModel(application) {
     val stateManager = StateManager()
 
     // Cache of generated questions by key: "grade_subject_lang"
@@ -50,6 +54,9 @@ class GameViewModel : ViewModel() {
     // Active Quiz states
     private val _questions = MutableStateFlow<List<Question>>(emptyList())
     val questions: StateFlow<List<Question>> = _questions.asStateFlow()
+
+    private val _isOfflineMode = MutableStateFlow(false)
+    val isOfflineMode: StateFlow<Boolean> = _isOfflineMode.asStateFlow()
 
     private val _currentQuestionIndex = MutableStateFlow(0)
     val currentQuestionIndex: StateFlow<Int> = _currentQuestionIndex.asStateFlow()
@@ -121,65 +128,139 @@ class GameViewModel : ViewModel() {
         _isCorrectFeedback.value = null
         
         SoundManager.playWhoosh()
-        loadQuestions()
+        loadQuestions(forceRefresh = false)
     }
 
-    fun loadQuestions() {
+    fun loadQuestions(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
             
+            val context = getApplication<Application>()
             val lang = stateManager.language.value
             val grade = _selectedGrade.value
             val subject = _selectedSubject.value
-            val cacheKey = "${grade}_${subject}_${lang}"
-            
+
+            // 1. Perform daily check on persistent question history
+            PlaySessionManager.checkDailyReset(context)
+
             try {
-                // Ensure a shownQuestions list exists for this key
-                val shownSet = shownQuestionsHistory.getOrPut(cacheKey) { mutableSetOf() }
-                
-                // Get list belonging to key in our pool
-                val pool = questionsCache.getOrPut(cacheKey) { mutableListOf() }
-                
-                // Filter unasked questions
-                var unshown = pool.filter { !shownSet.contains(it.question) }
-                
-                if (unshown.size < 20) {
-                    // Fetch 20 fresh ones from Gemini
-                    val fresh = com.example.data.QuestionGenerator.generateQuestions(grade, subject, lang)
-                    pool.addAll(fresh)
-                    
-                    // Filter again with new added pool
-                    unshown = pool.filter { !shownSet.contains(it.question) }
-                }
-                
-                // We must take exactly 20 questions
-                val selectedQuestions = if (unshown.size >= 20) {
-                    unshown.shuffled().take(20)
-                } else {
-                    // If we still can't satisfy 20 due to duplicates or API constraints, 
-                    // clear the history for this session, shuffle the entire pool, and use them
-                    shownSet.clear()
-                    if (pool.size >= 20) {
-                        pool.shuffled().take(20)
-                    } else {
-                        // Fallback to offline questions to fill up 20 questions if pool is somehow smaller than 20
-                        val offline = QuestionPool.getOfflineQuestions(grade, subject, lang).shuffled()
-                        val combined = (pool + offline).distinctBy { it.question }
-                        combined.take(20)
+                // 2. Fetch the 10 built-in offline questions for current selection
+                val builtInQuestions = QuestionBank.getQuestions(grade, subject, lang)
+
+                // 3. Try to load 10 bonus questions from Gemini with 30-day cache protection
+                var geminiQuestions = emptyList<Question>()
+                val cacheValid = PlaySessionManager.isCacheValid(context, grade, subject, lang)
+
+                if (cacheValid && !forceRefresh) {
+                    val cached = PlaySessionManager.getCachedQuestions(context, grade, subject, lang)
+                    if (cached != null) {
+                        geminiQuestions = cached
+                        Log.d("GameViewModel", "Loaded Gemini bonus questions from 30-day cache.")
                     }
                 }
-                
-                // Track these questions as shown in this session
-                shownSet.addAll(selectedQuestions.map { it.question })
-                
-                // Set the questions state flow
-                _questions.value = selectedQuestions
+
+                if (geminiQuestions.isEmpty() || !cacheValid || forceRefresh) {
+                    try {
+                        Log.d("GameViewModel", "Querying Gemini API for 10 fresh bonus questions...")
+                        val fresh = QuestionGenerator.generateQuestions(grade, subject, lang)
+                        if (fresh.isNotEmpty()) {
+                            PlaySessionManager.saveCachedQuestions(context, grade, subject, lang, fresh)
+                            geminiQuestions = fresh
+                        }
+                    } catch (ex: Exception) {
+                        Log.e("GameViewModel", "Gemini fetch failed, operating in offline-only fallback mode: ${ex.message}", ex)
+                    }
+                }
+
+                // 4. Merge offline questions with Gemini questions
+                val combinedPool = mutableListOf<Question>()
+                combinedPool.addAll(builtInQuestions)
+                combinedPool.addAll(geminiQuestions)
+
+                // Remove exact ID duplicates
+                val distinctPool = combinedPool.distinctBy { it.questionId }
+
+                // 5. Track unshown questions to guarantee NO repeats within session & 24H persistent period
+                var availableUnshown = distinctPool.filter { !PlaySessionManager.isQuestionRepeat(context, it) }
+
+                // 6. Handle exhaustion within round
+                if (availableUnshown.isEmpty()) {
+                    val exhaustionMsg = if (lang == "si") {
+                        "ඔබ පවතින සියලුම ප්‍රශ්න සඳහා පිළිතුරු සපයා ඇත! විශිෂ්ටයි! නව ප්‍රශ්න ලබාගනිමින් පවතී..."
+                    } else {
+                        "You have answered all available questions! Great job! Fetching new questions..."
+                    }
+                    _error.value = exhaustionMsg
+
+                    // Clear persistent shown history so player can start fresh in the next round
+                    PlaySessionManager.clearPersistentShownList(context)
+                    PlaySessionManager.clearCache(context, grade, subject, lang)
+
+                    // Fetch fresh Gemini bonus questions immediately
+                    try {
+                        val fresh = QuestionGenerator.generateQuestions(grade, subject, lang)
+                        PlaySessionManager.saveCachedQuestions(context, grade, subject, lang, fresh)
+                        geminiQuestions = fresh
+                    } catch (e: Exception) {
+                        Log.e("GameViewModel", "Gemini fetch on exhaustion failed: ${e.message}")
+                    }
+
+                    val reBuiltIn = QuestionBank.getQuestions(grade, subject, lang)
+                    availableUnshown = (reBuiltIn + geminiQuestions).distinctBy { it.questionId }
+                }
+
+                // 7. Establish offline mode flag for UI indicators
+                _isOfflineMode.value = geminiQuestions.isEmpty()
+
+                // 8. Fully shuffle questions and options for active playing round
+                val shuffledFinal = availableUnshown.shuffled().map { q ->
+                    val originalCorrectOption = q.options[q.correctAnswerIndex]
+                    val shuffledOptions = q.options.shuffled()
+                    val newCorrectIndex = shuffledOptions.indexOf(originalCorrectOption)
+                    
+                    q.copy(
+                        options = shuffledOptions,
+                        correctAnswer = newCorrectIndex
+                    )
+                }
+
+                _questions.value = shuffledFinal
                 _isLoading.value = false
+                
+                // Track first question as shown as soon as we start
+                if (shuffledFinal.isNotEmpty()) {
+                    PlaySessionManager.markAsShown(context, shuffledFinal[0])
+                }
+                
                 startTimerLimit()
             } catch (e: Exception) {
-                _error.value = e.message ?: "Failed to invoke wizard scroll power. Please check network/secrets configuration."
+                Log.e("GameViewModel", "Critical failure during question system loading: ${e.message}", e)
+                
+                // Hard-fallback to local offline-only questions
+                val fallbackLocal = QuestionBank.getQuestions(grade, subject, lang)
+                val unshownLocal = fallbackLocal.filter { !PlaySessionManager.isQuestionRepeat(context, it) }
+                val finalFallback = if (unshownLocal.isNotEmpty()) unshownLocal else fallbackLocal
+
+                val shuffledFallback = finalFallback.shuffled().map { q ->
+                    val originalCorrectOption = q.options[q.correctAnswerIndex]
+                    val shuffledOptions = q.options.shuffled()
+                    val newCorrectIndex = shuffledOptions.indexOf(originalCorrectOption)
+                    q.copy(
+                        options = shuffledOptions,
+                        correctAnswer = newCorrectIndex
+                    )
+                }
+
+                _questions.value = shuffledFallback
+                _isOfflineMode.value = true
                 _isLoading.value = false
+                
+                if (shuffledFallback.isNotEmpty()) {
+                    PlaySessionManager.markAsShown(context, shuffledFallback[0])
+                }
+                
+                startTimerLimit()
             }
         }
     }
@@ -254,6 +335,7 @@ class GameViewModel : ViewModel() {
             
             if (nextIdx < currentList.size) {
                 _currentQuestionIndex.value = nextIdx
+                PlaySessionManager.markAsShown(getApplication(), currentList[nextIdx])
                 SoundManager.playWhoosh()
                 startTimerLimit()
             } else {

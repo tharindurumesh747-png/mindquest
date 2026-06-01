@@ -26,7 +26,7 @@ object QuestionGenerator {
 
         val prompt = if (language == "si") {
             """
-Generate exactly 20 multiple choice questions for a Grade $grade Sri Lankan student studying $subject.
+Generate exactly 10 multiple choice questions for a Grade $grade Sri Lankan student studying $subject.
 IMPORTANT: Write ALL questions and ALL answer options in Sinhala language (සිංහල).
 Use proper Sinhala script.
 Follow Sri Lankan school curriculum exactly.
@@ -34,7 +34,7 @@ Grade 1-3: very simple basic questions
 Grade 4-6: intermediate level questions
 Grade 7-9: advanced level questions
 Grade 10: difficult exam level questions
-All 20 questions must be different from each other.
+All 10 questions must be different from each other.
 Cover different topics within the subject.
 Mix easy, medium and hard difficulty levels.
 Return ONLY a JSON array, no other text:
@@ -49,13 +49,13 @@ Return ONLY a JSON array, no other text:
             """.trimIndent()
         } else {
             """
-Generate exactly 20 multiple choice questions for a Grade $grade Sri Lankan student studying $subject.
+Generate exactly 10 multiple choice questions for a Grade $grade Sri Lankan student studying $subject.
 Follow Sri Lankan school curriculum exactly.
 Grade 1-3: very simple basic questions
 Grade 4-6: intermediate level questions
 Grade 7-9: advanced level questions
 Grade 10: difficult exam level questions
-All 20 questions must be different from each other.
+All 10 questions must be different from each other.
 Cover different topics within the subject.
 Mix easy, medium and hard difficulty levels.
 Return ONLY a JSON array, no other text:
@@ -92,7 +92,7 @@ Return ONLY a JSON array, no other text:
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = requestJson.toRequestBody(mediaType)
         val request = Request.Builder()
-            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey")
+            .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$apiKey")
             .post(requestBody)
             .build()
 
@@ -171,8 +171,10 @@ Return ONLY a JSON array, no other text:
             }
             val hint = obj.optString("hint", if (lang == "si") defaultHintSi else defaultHintEn)
 
+            val qid = "grade${grade}_${subject}_gemini_10${i}"
             questions.add(
                 Question(
+                    id = qid,
                     question = questionText,
                     options = options,
                     correctAnswer = correctAnswer,

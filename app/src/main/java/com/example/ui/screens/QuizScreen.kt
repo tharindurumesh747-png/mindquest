@@ -204,6 +204,57 @@ fun QuizScreen(
                     HeartsRepresentationBar(lives = lives)
                 }
 
+                // ONLINE/OFFLINE STATUS BAR
+                val isOffline by viewModel.isOfflineMode.collectAsState()
+                
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isOffline) Color(0x33F59E0B) else Color(0x3310B981))
+                        .border(1.dp, if (isOffline) Color(0x66F59E0B) else Color(0x6610B981), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(if (isOffline) Color(0xFFF59E0B) else Color(0xFF10B981))
+                        )
+                        Text(
+                            text = if (isOffline) {
+                                if (isSinhala) "Offline: ප්‍රශ්න 10 ක් ඇත" else "Offline: 10 questions available"
+                            } else {
+                                if (isSinhala) "Online: ප්‍රශ්න 20 ක් සූදානම්!" else "Online: 20 questions loaded!"
+                            },
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    // Refresh Button
+                    Text(
+                        text = if (isSinhala) "ප්‍රශ්න අලුත් කරන්න ↻" else "Refresh Questions ↻",
+                        color = theme.accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clickable {
+                                SoundManager.playClick()
+                                viewModel.loadQuestions(forceRefresh = true)
+                            }
+                            .padding(4.dp)
+                            .testTag("refresh_questions_button")
+                    )
+                }
+
                 // LINEAR TIMER BAR
                 val progressRatio = timerSeconds / 30f
                 val timerColor = when {
