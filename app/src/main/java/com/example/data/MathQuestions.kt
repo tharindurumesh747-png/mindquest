@@ -46,6 +46,9 @@ object MathQuestions {
             }
         }
 
+        val hintEng = HintGenerator.generateHint(p.question, p.options, p.correctAnswer, "English")
+        val hintSin = HintGenerator.generateHint(p.questionSinhala, p.optionsSinhala, p.correctAnswer, "Sinhala")
+
         return Question(
             id = qid,
             question = p.question,
@@ -56,7 +59,9 @@ object MathQuestions {
             grade = grade,
             subject = "Math",
             stage = stage,
-            difficulty = difficulty
+            difficulty = difficulty,
+            hint = hintEng,
+            hintSinhala = hintSin
         )
     }
 
@@ -238,7 +243,7 @@ object MathQuestions {
         5 -> Pentuple("Convert to decimal: 5 and three-tenths.", "දශමයකට හරවන්න: පහයි දහයෙන් තුනක්.", listOf("5.3", "5.03", "5.003", "53.0"), listOf("5.3", "5.03", "5.003", "53.0"), 0)
         6 -> Pentuple("What is the sum of 12500 and 37500?", "12500 සහ 37500 හි එකතුව කොපමණද?", listOf("40000", "45000", "50000", "55000"), listOf("40000", "45000", "50000", "55000"), 2)
         7 -> Pentuple("What is 0.75 - 0.25?", "0.75 - 0.25 කීයද?", listOf("0.5", "0.55", "0.25", "0.7"), listOf("0.5", "0.55", "0.25", "0.7"), 0)
-        8 -> Pentuple("Which number represents ninety-five thousand and six?", "අසූදහස් හයක් නියෝජනය කරන සංඛ්‍යාව කුමක්ද?", listOf("9506", "95006", "95060", "950006"), listOf("9506", "95006", "95060", "950006"), 1)
+        8 -> Pentuple("Which number represents ninety-five thousand and six?", "අනූදහස් හය නියෝජනය කරන සංඛ්‍යාව කුමක්ද?", listOf("9506", "95006", "95060", "950006"), listOf("9506", "95006", "95060", "950006"), 1)
         else -> Pentuple("Find the value of 1.2 + 2.8 = ?", "1.2 + 2.8 හි අගය සොයන්න.", listOf("3.0", "3.8", "4.0", "4.2"), listOf("3.0", "3.8", "4.0", "4.2"), 2)
     }
 

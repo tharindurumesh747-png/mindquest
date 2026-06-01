@@ -10,11 +10,12 @@ data class Question(
     val grade: Int,
     val subject: String,
     val stage: Int, // 1, 2, or 3
-    val difficulty: String // easy/medium/hard
+    val difficulty: String, // easy/medium/hard
+    val hint: String,
+    val hintSinhala: String
 ) {
     // Backward compatibility getters for previous screens/methods
     val text: String get() = question
     val correctAnswerIndex: Int get() = correctAnswer
     val questionId: String get() = id
-    val hint: String get() = ""
 }

@@ -46,6 +46,9 @@ object ScienceQuestions {
             }
         }
 
+        val hintEng = HintGenerator.generateHint(p.question, p.options, p.correctAnswer, "English")
+        val hintSin = HintGenerator.generateHint(p.questionSinhala, p.optionsSinhala, p.correctAnswer, "Sinhala")
+
         return Question(
             id = qid,
             question = p.question,
@@ -56,7 +59,9 @@ object ScienceQuestions {
             grade = grade,
             subject = "Science",
             stage = stage,
-            difficulty = difficulty
+            difficulty = difficulty,
+            hint = hintEng,
+            hintSinhala = hintSin
         )
     }
 
@@ -73,10 +78,10 @@ object ScienceQuestions {
         0 -> Pentuple("Which of the following is a living thing?", "පහත දැක්වෙන දේවලින් පණ ඇති (සජීවී) දෙයක් වන්නේ කුමක්ද?", listOf("Stone", "Plant", "Toy Car", "Book"), listOf("ගලක්", "පැලෑටියක්", "සෙල්ලම් කාර් එකක්", "පොතක්"), 1)
         1 -> Pentuple("Which of these cannot grow?", "පහත දැක්වෙන දේවලින් වර්ධනය විය නොහැක්කේ කුමකින්ද?", listOf("Kitten", "Baby", "Plastic Doll", "Tree"), listOf("පූස් පැටියා", "බිළිඳා", "ප්ලාස්ටික් බෝනික්කා", "ගස"), 2)
         2 -> Pentuple("What is a dog?", "බල්ලෙකු අයත් වන්නේ කුමන කාණ්ඩයටද?", listOf("An animal", "A plant", "A stone", "A vehicle"), listOf("සතෙක්", "ශාකයක්", "ගලක්", "වාහනයක්"), 0)
-        3 -> Pentuple("Pick a non-living thing from here:", "මෙහි ඇති අජීවී (පණ නැති) දෙය තෝරන්න:", listOf("Cat", "Fish", "Pencil", "Banyan tree"), listOf("බළලා", "මසෙක්", "පැන්සල", "නුග ගස"), 2)
+        3 -> Pentuple("Pick a non-living thing from here:", "මෙහි ඇති අජීවී (පණ නැති) දෙය තෝරන්න:", listOf("Cat", "Fish", "Pencil", "Banyan tree"), listOf("බළලා", "මාළුවෙක්", "පැන්සල", "නුග ගස"), 2)
         4 -> Pentuple("Which part of our body is a sense organ?", "අපගේ ශරීරයේ ඇති ඉන්ද්‍රියක් වන්නේ කුමක්ද?", listOf("Eye", "Hair", "Nail", "Bone"), listOf("ඇස", "කෙස්", "නිය", "කටුව"), 0)
         5 -> Pentuple("Which structure is found on most plants?", "බොහෝ ශාකවල දැකිය හැකි කොටසක් කුමක්ද?", listOf("Feather", "Green leaf", "Tail", "Beak"), listOf("පිහාටුව", "කොළ පැහැති පත්‍රය", "වලිගය", "හොටය"), 1)
-        6 -> Pentuple("Which animal has wings and can fly?", "පියාපත් ඇති, පියාසර කළ හැකි සත්වයා කවුද?", listOf("Dog", "Frog", "Parrot", "Fish"), listOf("බල්ලා", "ගෙම්බා", "ගිරවා", "මසෙක්"), 2)
+        6 -> Pentuple("Which animal has wings and can fly?", "පියාපත් ඇති, පියාසර කළ හැකි සත්වයා කවුද?", listOf("Dog", "Frog", "Parrot", "Fish"), listOf("බල්ලා", "ගෙම්බා", "ගිරවා", "මාළුවෙක්"), 2)
         7 -> Pentuple("Water we drink is a:", "අප පානය කරන ජලය යනු කුමක්ද?", listOf("Living thing", "Non-living thing", "Plant", "Animal"), listOf("සජීවී දෙයක්", "අජීවී දෙයක්", "ශාකයක්", "සතෙක්"), 1)
         8 -> Pentuple("Which of these has no life?", "පහත ඒවායින් ජීවයක් නොමැති දෙය කුමක්ද?", listOf("Bird", "Earthworm", "Bicycle", "Rose bush"), listOf("කුරුල්ලා", "ගැඩවිලා", "පාපැදිය", "රෝස පඳුර"), 2)
         else -> Pentuple("What runs on roads and is non-living?", "පාරේ ධාවනය වන, ජීවයක් නොමැති දෙයක් කුමක්ද?", listOf("Horse", "Bus", "Snail", "Frog"), listOf("අශ්වයා", "බස් රථය", "ගොළුබෙල්ලා", "ගෙම්බා"), 1)
@@ -90,7 +95,7 @@ object ScienceQuestions {
         4 -> Pentuple("Which organ covers our whole body and feels touch?", "අපගේ මුළු ශරීරයම ආවරණය කරමින් ස්පර්ශය දැනීමට සලස්වන ඉන්ද්‍රිය?", listOf("Skin", "Nose", "Ear", "Tongue"), listOf("සම", "නාසය", "කන", "දිව"), 0)
         5 -> Pentuple("We should brush our teeth how many times a day?", "අප දිනකට කී වතාවක් දත් මැදිය යුතුද?", listOf("Never", "Once a week", "At least twice", "Every hour"), listOf("කිසිවිටක නෙවේ", "සතියට වරක්", "අවම දෙවරක්", "සෑම පැයකදීම"), 2)
         6 -> Pentuple("Which structure do birds use to eat food?", "කුරුල්ලන් ආහාර ගැනීමට භාවිතා කරන ශරීර කොටස කුමක්ද?", listOf("Beak", "Teeth", "Hands", "Tail"), listOf("හොටය", "දත්", "අත්", "වලිගය"), 0)
-        7 -> Pentuple("Which animal lives in water and swims with fins?", "ජලයේ ජීවත් වන, වරල් මඟින් පිහිනන සත්වයා කවුද?", listOf("Cat", "Fish", "Squirrel", "Ant"), listOf("බළලා", "මසෙක්", "ලේනා", "කූඹියා"), 1)
+        7 -> Pentuple("Which animal lives in water and swims with fins?", "ජලයේ ජීවත් වන, වරල් මඟින් පිහිනන සත්වයා කවුද?", listOf("Cat", "Fish", "Squirrel", "Ant"), listOf("බළලා", "මාළුවෙක්", "ලේනා", "කූඹියා"), 1)
         8 -> Pentuple("What is the color of the clear sky during a sunny day?", "හිරු පායා ඇති පැහැදිලි දවසක අහසේ පැහැය කුමක්ද?", listOf("Red", "Blue", "Black", "Green"), listOf("රතු", "නිල්", "කළු", "කොළ"), 1)
         else -> Pentuple("Which animal makes a 'meow' sound?", "'මියව්' හඬ නගන සත්වයා කවුද?", listOf("Dog", "Cat", "Cow", "Crow"), listOf("බල්ලා", "බළලා", "එළදෙන", "කපුටා"), 1)
     }

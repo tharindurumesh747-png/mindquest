@@ -57,6 +57,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val _isFiftyFiftyUsed = MutableStateFlow(false)
     val isFiftyFiftyUsed: StateFlow<Boolean> = _isFiftyFiftyUsed.asStateFlow()
 
+    private val _hintsCount = MutableStateFlow(3)
+    val hintsCount: StateFlow<Int> = _hintsCount.asStateFlow()
+
     private val _disabledOptions = MutableStateFlow<Set<Int>>(emptySet())
     val disabledOptions: StateFlow<Set<Int>> = _disabledOptions.asStateFlow()
 
@@ -95,6 +98,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _earnedXp.value = 0
         _lives.value = 3
         _isFiftyFiftyUsed.value = false
+        _hintsCount.value = 3
         _disabledOptions.value = emptySet()
         _selectionFeedback.value = null
         _isCorrectFeedback.value = null
@@ -273,5 +277,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         
         _disabledOptions.value = toDisable
         _isFiftyFiftyUsed.value = true
+    }
+
+    fun useHint(): Boolean {
+        if (_hintsCount.value > 0) {
+            _hintsCount.value -= 1
+            _earnedXp.value -= 5
+            return true
+        }
+        return false
     }
 }

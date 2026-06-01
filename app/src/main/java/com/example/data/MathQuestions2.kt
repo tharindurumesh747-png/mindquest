@@ -46,6 +46,9 @@ object MathQuestions2 {
             }
         }
 
+        val hintEng = HintGenerator.generateHint(p.question, p.options, p.correctAnswer, "English")
+        val hintSin = HintGenerator.generateHint(p.questionSinhala, p.optionsSinhala, p.correctAnswer, "Sinhala")
+
         return Question(
             id = qid,
             question = p.question,
@@ -56,7 +59,9 @@ object MathQuestions2 {
             grade = grade,
             subject = "Math",
             stage = stage,
-            difficulty = difficulty
+            difficulty = difficulty,
+            hint = hintEng,
+            hintSinhala = hintSin
         )
     }
 

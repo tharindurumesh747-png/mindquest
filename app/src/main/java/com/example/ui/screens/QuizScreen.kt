@@ -15,6 +15,8 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -64,10 +67,35 @@ fun QuizScreen(
     var showSpellDialog by remember { mutableStateOf(false) }
     var showBackConfirmationDialog by remember { mutableStateOf(false) }
 
+    val hintsCount by viewModel.hintsCount.collectAsState()
+
+    var showDeductionAnimation by remember { mutableStateOf(false) }
+    var deductionOffset by remember { mutableStateOf(0f) }
+    var deductionAlpha by remember { mutableStateOf(1f) }
+
+    LaunchedEffect(showDeductionAnimation) {
+        if (showDeductionAnimation) {
+            deductionOffset = 0f
+            deductionAlpha = 1f
+            val duration = 1200
+            val step = 16
+            var currentMs = 0
+            while (currentMs < duration) {
+                kotlinx.coroutines.delay(step.toLong())
+                currentMs += step
+                val fraction = currentMs.toFloat() / duration
+                deductionOffset = -120f * fraction
+                deductionAlpha = 1f - fraction
+            }
+            showDeductionAnimation = false
+        }
+    }
+
     // Reset local option selection variables whenever question index advances
     LaunchedEffect(currentIndex) {
         selectedOptionIndex = null
         isSubmitted = false
+        showSpellDialog = false
     }
 
     // Intercept hardware and gesture-based physical system back clicks
@@ -466,61 +494,130 @@ fun QuizScreen(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 // LOWER DECK: RPG Helper spells (50-50, scroll hint)
-                Row(
+                Box(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    contentAlignment = Alignment.Center
                 ) {
-                    // 50/50 spell block
-                    Button(
-                        onClick = {
-                            SoundManager.playClick()
-                            viewModel.useFiftyFifty()
-                        },
-                        enabled = !isFiftyFiftyUsed && !isAnswerActionLocked,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = theme.secondary.copy(alpha = 0.2f),
-                            disabledContainerColor = Color.White.copy(alpha = 0.05f)
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp)
-                            .border(
-                                1.dp,
-                                if (isFiftyFiftyUsed) Color.Transparent else theme.accent.copy(alpha = 0.4f),
-                                RoundedCornerShape(26.dp)
-                            ),
-                        shape = RoundedCornerShape(26.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "Spell casting 50/50 icon",
-                            tint = if (isFiftyFiftyUsed) Color.Gray else theme.accent
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (isFiftyFiftyUsed) "FIFTY USED" else spellFiftyFiftyLabel,
-                            color = if (isFiftyFiftyUsed) Color.Gray else Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        // 50/50 spell block
+                        Button(
+                            onClick = {
+                                SoundManager.playClick()
+                                viewModel.useFiftyFifty()
+                            },
+                            enabled = !isFiftyFiftyUsed && !isAnswerActionLocked,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = theme.secondary.copy(alpha = 0.2f),
+                                disabledContainerColor = Color.White.copy(alpha = 0.05f)
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp)
+                                .border(
+                                    1.dp,
+                                    if (isFiftyFiftyUsed) Color.Transparent else theme.accent.copy(alpha = 0.4f),
+                                    RoundedCornerShape(26.dp)
+                                ),
+                            shape = RoundedCornerShape(26.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "Spell casting 50/50 icon",
+                                tint = if (isFiftyFiftyUsed) Color.Gray else theme.accent
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isFiftyFiftyUsed) "FIFTY USED" else spellFiftyFiftyLabel,
+                                color = if (isFiftyFiftyUsed) Color.Gray else Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Expansion scroll hint trigger button
+                        val hintButtonText = if (isSinhala) {
+                            when (hintsCount) {
+                                3 -> "💡 ඉඟිය (ඉතිරි 3)"
+                                2 -> "💡 ඉඟිය (ඉතිරි 2)"
+                                1 -> "💡 ඉඟිය (ඉතිරි 1)"
+                                else -> "ඉඟි නැත"
+                            }
+                        } else {
+                            when (hintsCount) {
+                                3 -> "💡 Hint (3 left)"
+                                2 -> "💡 Hint (2 left)"
+                                1 -> "💡 Hint (1 left)"
+                                else -> "No hints remaining"
+                            }
+                        }
+
+                        val isHintEnabled = hintsCount > 0 || showSpellDialog
+
+                        Button(
+                            onClick = {
+                                SoundManager.playClick()
+                                if (showSpellDialog) {
+                                    showSpellDialog = false
+                                } else {
+                                    if (hintsCount > 0) {
+                                        val success = viewModel.useHint()
+                                        if (success) {
+                                            showDeductionAnimation = true
+                                            showSpellDialog = true
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = isHintEnabled && !isAnswerActionLocked,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = theme.primary.copy(alpha = 0.2f),
+                                disabledContainerColor = Color.White.copy(alpha = 0.05f)
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp)
+                                .border(
+                                    1.dp,
+                                    if (!isHintEnabled) Color.Transparent else theme.accent.copy(alpha = 0.4f),
+                                    RoundedCornerShape(26.dp)
+                                )
+                                .testTag("hint_trigger_button"),
+                            shape = RoundedCornerShape(26.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (hintsCount > 0) Icons.Default.Info else Icons.Default.Lock,
+                                contentDescription = "Scroll Hint info button",
+                                tint = if (!isHintEnabled) Color.Gray else theme.accent,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (hintsCount == 0 && !showSpellDialog) {
+                                    if (isSinhala) "ඉඟි නැත" else "No hints remaining"
+                                } else {
+                                    hintButtonText
+                                },
+                                color = if (!isHintEnabled) Color.Gray else Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
-                    // Expansion scroll hint trigger button
-                    IconButton(
-                        onClick = {
-                            SoundManager.playClick()
-                            showSpellDialog = !showSpellDialog
-                        },
-                        modifier = Modifier
-                            .size(52.dp)
-                            .clip(RoundedCornerShape(26.dp))
-                            .background(theme.primary.copy(alpha = 0.15f))
-                            .border(1.dp, theme.primary.copy(alpha = 0.4f), RoundedCornerShape(26.dp))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = "Scroll Hint info button",
-                            tint = theme.accent
+                    if (showDeductionAnimation) {
+                        Text(
+                            text = if (isSinhala) "-5 ලකුණු" else "-5 points",
+                            color = Color(0xFFEF4444),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 40.dp)
+                                .offset(y = deductionOffset.dp)
+                                .graphicsLayer(alpha = deductionAlpha)
                         )
                     }
                 }
@@ -535,22 +632,45 @@ fun QuizScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color.Black.copy(alpha = 0.6f))
+                            .background(Color.Black.copy(alpha = 0.8f))
                             .border(1.dp, theme.portalColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                             .padding(14.dp)
                     ) {
                         Column {
-                            Text(
-                                text = hintButtonLabel,
-                                color = theme.portalColor,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 2.sp
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = hintButtonLabel,
+                                    color = theme.portalColor,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 2.sp
+                                )
+                                IconButton(
+                                    onClick = {
+                                        SoundManager.playClick()
+                                        showSpellDialog = false
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Close hint button",
+                                        tint = Color.White.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
                             Spacer(modifier = Modifier.height(4.dp))
+                            val displayHint = if (currentQuestion != null) {
+                                if (isSinhala) currentQuestion.hintSinhala else currentQuestion.hint
+                            } else ""
                             Text(
-                                text = currentQuestion.hint,
-                                color = Color.White.copy(alpha = 0.9f),
+                                text = displayHint,
+                                color = Color.White.copy(alpha = 0.95f),
                                 fontSize = 13.sp,
                                 fontFamily = FontFamily.SansSerif
                             )
