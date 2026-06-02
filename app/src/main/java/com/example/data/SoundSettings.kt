@@ -37,8 +37,17 @@ object SoundSettings {
     private val _backgroundMusicFlow = MutableStateFlow(true)
     val backgroundMusicFlow: StateFlow<Boolean> = _backgroundMusicFlow
 
+    private fun getAttributionContext(context: Context): Context {
+        return if (android.os.Build.VERSION.SDK_INT >= 30) {
+            context.createAttributionContext("default")
+        } else {
+            context
+        }
+    }
+
     fun init(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val attrContext = getAttributionContext(context)
+        val prefs = attrContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         masterVolume = prefs.getFloat(KEY_MASTER_VOLUME, 1.0f)
         backgroundMusicEnabled = prefs.getBoolean(KEY_BG_MUSIC, true)
         buttonSoundEnabled = prefs.getBoolean(KEY_BUTTON_SOUND, true)
@@ -48,7 +57,8 @@ object SoundSettings {
     }
 
     fun save(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val attrContext = getAttributionContext(context)
+        val prefs = attrContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().apply {
             putFloat(KEY_MASTER_VOLUME, masterVolume)
             putBoolean(KEY_BG_MUSIC, backgroundMusicEnabled)

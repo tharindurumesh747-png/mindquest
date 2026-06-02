@@ -17,8 +17,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Initialize SoundManager
-        SoundManager.init(applicationContext)
+        // Initialize SoundManager with attribution context
+        val attributionContext = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            createAttributionContext("default")
+        } else {
+            applicationContext
+        }
+        SoundManager.init(attributionContext)
 
         // Register process lifecycle callbacks to track when the app state changes
         try {
